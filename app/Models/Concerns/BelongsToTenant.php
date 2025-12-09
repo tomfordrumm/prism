@@ -40,23 +40,6 @@ trait BelongsToTenant
                 return;
             }
 
-            /** @var Tenant|null $fallbackTenant */
-            $fallbackTenant = request()->user()?->tenants()->orderBy('tenants.id')->first();
-
-            if ($fallbackTenant) {
-                $tenantManager->setCurrentTenant($fallbackTenant);
-
-                $builder->where($builder->qualifyColumn('tenant_id'), $fallbackTenant->id);
-
-                logger()->warning('BelongsToTenant: recovered tenant from user', [
-                    'model' => static::class,
-                    'tenant_id' => $fallbackTenant->id,
-                    'url' => request()->fullUrl(),
-                ]);
-
-                return;
-            }
-
             logger()->warning('BelongsToTenant: no current tenant, query forced empty', [
                 'model' => static::class,
                 'url' => request()->fullUrl(),

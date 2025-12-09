@@ -19,16 +19,19 @@ class Feedback extends Model
         return [];
     }
 
+    /** @return BelongsTo<User, $this> */
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
 
+    /** @return BelongsTo<Run, $this> */
     public function run(): BelongsTo
     {
         return $this->belongsTo(Run::class);
     }
 
+    /** @return BelongsTo<RunStep, $this> */
     public function runStep(): BelongsTo
     {
         return $this->belongsTo(RunStep::class);

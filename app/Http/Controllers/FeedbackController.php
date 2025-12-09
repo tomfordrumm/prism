@@ -8,6 +8,7 @@ use App\Models\Run;
 use App\Models\RunStep;
 use App\Models\PromptVersion;
 use App\Services\Feedback\PromptImproverService;
+use App\Support\TargetPromptResolver;
 use Illuminate\Http\RedirectResponse;
 
 class FeedbackController extends Controller
@@ -16,13 +17,14 @@ class FeedbackController extends Controller
         StoreFeedbackRequest $request,
         Run $run,
         RunStep $runStep,
-        PromptImproverService $improverService
+        PromptImproverService $improverService,
+        TargetPromptResolver $targetPromptResolver
     ): RedirectResponse {
         $this->assertRunStep($run, $runStep);
 
         $runStep->load('chainNode');
 
-        $targetPromptVersionId = $this->targetPromptVersionId($runStep);
+        $targetPromptVersionId = $targetPromptResolver->fromRunStep($runStep);
 
         $feedback = Feedback::create([
             'tenant_id' => currentTenantId(),
@@ -59,22 +61,5 @@ class FeedbackController extends Controller
         if ($step->run_id !== $run->id) {
             abort(404);
         }
-    }
-
-    private function targetPromptVersionId(RunStep $runStep): ?int
-    {
-        $config = $runStep->chainNode->messages_config ?? [];
-
-        $system = collect($config)->firstWhere('role', 'system');
-        if ($system && isset($system['prompt_version_id'])) {
-            return (int) $system['prompt_version_id'];
-        }
-
-        $user = collect($config)->firstWhere('role', 'user');
-        if ($user && isset($user['prompt_version_id'])) {
-            return (int) $user['prompt_version_id'];
-        }
-
-        return null;
     }
 }

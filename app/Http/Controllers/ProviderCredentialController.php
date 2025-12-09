@@ -5,7 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\ProviderCredentials\StoreProviderCredentialRequest;
 use App\Http\Requests\ProviderCredentials\UpdateProviderCredentialRequest;
 use App\Models\ProviderCredential;
-use Illuminate\Contracts\Encryption\DecryptException;
+use App\Services\ProviderCredentials\ProviderCredentialViewService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Crypt;
 use Inertia\Inertia;
@@ -13,30 +13,23 @@ use Inertia\Response;
 
 class ProviderCredentialController extends Controller
 {
+    public function __construct(
+        private ProviderCredentialViewService $viewService
+    ) {
+    }
+
     public function index(): Response
     {
-        $credentials = ProviderCredential::query()
-            ->latest()
-            ->get()
-            ->map(fn (ProviderCredential $credential) => [
-                'id' => $credential->id,
-                'name' => $credential->name,
-                'provider' => $credential->provider,
-                'masked_api_key' => $this->maskApiKey($credential->encrypted_api_key),
-                'created_at' => $credential->created_at,
-            ]);
+        $viewData = $this->viewService->indexData();
 
-        return Inertia::render('providers/credentials/Index', [
-            'credentials' => $credentials,
-            'providers' => $this->providerOptions(),
-        ]);
+        return Inertia::render('providers/credentials/Index', $viewData);
     }
 
     public function create(): Response
     {
-        return Inertia::render('providers/credentials/Create', [
-            'providers' => $this->providerOptions(),
-        ]);
+        $viewData = $this->viewService->createData();
+
+        return Inertia::render('providers/credentials/Create', $viewData);
     }
 
     public function store(StoreProviderCredentialRequest $request): RedirectResponse
@@ -54,22 +47,19 @@ class ProviderCredentialController extends Controller
 
     public function edit(ProviderCredential $providerCredential): Response
     {
-        return Inertia::render('providers/credentials/Edit', [
-            'credential' => [
-                'id' => $providerCredential->id,
-                'name' => $providerCredential->name,
-                'provider' => $providerCredential->provider,
-                'metadata' => $providerCredential->metadata,
-                'masked_api_key' => $this->maskApiKey($providerCredential->encrypted_api_key),
-            ],
-            'providers' => $this->providerOptions(),
-        ]);
+        $this->assertCredentialTenant($providerCredential);
+
+        $viewData = $this->viewService->editData($providerCredential);
+
+        return Inertia::render('providers/credentials/Edit', $viewData);
     }
 
     public function update(
         UpdateProviderCredentialRequest $request,
         ProviderCredential $providerCredential
     ): RedirectResponse {
+        $this->assertCredentialTenant($providerCredential);
+
         $providerCredential->fill([
             'provider' => $request->string('provider'),
             'name' => $request->string('name'),
@@ -87,30 +77,17 @@ class ProviderCredentialController extends Controller
 
     public function destroy(ProviderCredential $providerCredential): RedirectResponse
     {
+        $this->assertCredentialTenant($providerCredential);
+
         $providerCredential->delete();
 
         return redirect()->route('provider-credentials.index');
     }
 
-    private function maskApiKey(string $encryptedApiKey): string
+    private function assertCredentialTenant(ProviderCredential $providerCredential): void
     {
-        try {
-            $apiKey = Crypt::decryptString($encryptedApiKey);
-        } catch (DecryptException) {
-            return '****';
+        if ($providerCredential->tenant_id !== currentTenantId()) {
+            abort(404);
         }
-
-        $suffix = substr($apiKey, -4);
-
-        return '****'.$suffix;
-    }
-
-    private function providerOptions(): array
-    {
-        return [
-            ['value' => 'openai', 'label' => 'OpenAI'],
-            ['value' => 'anthropic', 'label' => 'Anthropic'],
-            ['value' => 'google', 'label' => 'Google'],
-        ];
     }
 }

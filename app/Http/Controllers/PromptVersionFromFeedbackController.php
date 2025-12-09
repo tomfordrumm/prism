@@ -7,6 +7,7 @@ use App\Models\Feedback;
 use App\Models\Project;
 use App\Models\PromptTemplate;
 use App\Models\PromptVersion;
+use App\Support\TargetPromptResolver;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
 
@@ -15,7 +16,8 @@ class PromptVersionFromFeedbackController extends Controller
     public function __invoke(
         StoreVersionFromFeedbackRequest $request,
         Project $project,
-        PromptTemplate $promptTemplate
+        PromptTemplate $promptTemplate,
+        TargetPromptResolver $targetPromptResolver
     ): RedirectResponse {
         $this->assertTemplateProject($promptTemplate, $project);
 
@@ -31,7 +33,7 @@ class PromptVersionFromFeedbackController extends Controller
             abort(422, 'Feedback does not contain suggestion.');
         }
 
-        $targetPromptVersionId = $this->targetPromptVersionId($feedback);
+        $targetPromptVersionId = $targetPromptResolver->fromRunStep($feedback->runStep);
 
         $targetVersion = $targetPromptVersionId
             ? PromptVersion::find($targetPromptVersionId)
@@ -62,28 +64,5 @@ class PromptVersionFromFeedbackController extends Controller
         if ($template->project_id !== $project->id || $template->tenant_id !== $project->tenant_id) {
             abort(404);
         }
-    }
-
-    private function targetPromptVersionId(Feedback $feedback): ?int
-    {
-        $step = $feedback->runStep;
-
-        if (! $step) {
-            return null;
-        }
-
-        $config = $step->chainNode->messages_config ?? [];
-
-        $system = collect($config)->firstWhere('role', 'system');
-        if ($system && isset($system['prompt_version_id'])) {
-            return (int) $system['prompt_version_id'];
-        }
-
-        $user = collect($config)->firstWhere('role', 'user');
-        if ($user && isset($user['prompt_version_id'])) {
-            return (int) $user['prompt_version_id'];
-        }
-
-        return null;
     }
 }
