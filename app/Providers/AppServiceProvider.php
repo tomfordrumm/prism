@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Support\TenantManager;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -11,7 +12,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(TenantManager::class);
+        $this->registerHelpers();
     }
 
     /**
@@ -20,5 +22,14 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         //
+    }
+
+    private function registerHelpers(): void
+    {
+        $helpersPath = app_path('Support/helpers.php');
+
+        if (file_exists($helpersPath)) {
+            require_once $helpersPath;
+        }
     }
 }

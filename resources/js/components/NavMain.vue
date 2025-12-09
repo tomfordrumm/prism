@@ -15,6 +15,20 @@ defineProps<{
 }>();
 
 const page = usePage();
+
+const routeFn = (window as unknown as { route?: (() => { current: (name: string) => boolean }) | undefined }).route;
+
+const isActive = (item: NavItem) => {
+    if (item.routeName && typeof routeFn === 'function') {
+        const router = routeFn();
+
+        if (router?.current) {
+            return router.current(item.routeName);
+        }
+    }
+
+    return urlIsActive(item.href, page.url);
+};
 </script>
 
 <template>
@@ -24,7 +38,7 @@ const page = usePage();
             <SidebarMenuItem v-for="item in items" :key="item.title">
                 <SidebarMenuButton
                     as-child
-                    :is-active="urlIsActive(item.href, page.url)"
+                    :is-active="isActive(item)"
                     :tooltip="item.title"
                 >
                     <Link :href="item.href">

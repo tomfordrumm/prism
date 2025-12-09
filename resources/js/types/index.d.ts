@@ -5,6 +5,12 @@ export interface Auth {
     user: User;
 }
 
+export interface TenancyProps {
+    currentTenant: { id: number; name: string } | null;
+    tenantsCount: number;
+    needsTenant: boolean;
+}
+
 export interface BreadcrumbItem {
     title: string;
     href: string;
@@ -15,6 +21,7 @@ export interface NavItem {
     href: NonNullable<InertiaLinkProps['href']>;
     icon?: LucideIcon;
     isActive?: boolean;
+    routeName?: string;
 }
 
 export type AppPageProps<
@@ -24,6 +31,7 @@ export type AppPageProps<
     quote: { message: string; author: string };
     auth: Auth;
     sidebarOpen: boolean;
+    tenancy: TenancyProps;
 };
 
 export interface User {

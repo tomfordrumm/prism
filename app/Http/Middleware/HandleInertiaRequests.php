@@ -46,6 +46,32 @@ class HandleInertiaRequests extends Middleware
                 'user' => $request->user(),
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+            'tenancy' => $this->tenancyPayload($request),
+        ];
+    }
+
+    private function tenancyPayload(Request $request): array
+    {
+        $user = $request->user();
+
+        if (! $user) {
+            return [
+                'currentTenant' => null,
+                'tenantsCount' => 0,
+                'needsTenant' => false,
+            ];
+        }
+
+        $tenantsCount = $user->tenants()->count();
+        $currentTenant = currentTenant();
+
+        return [
+            'currentTenant' => $currentTenant ? [
+                'id' => $currentTenant->id,
+                'name' => $currentTenant->name,
+            ] : null,
+            'tenantsCount' => $tenantsCount,
+            'needsTenant' => $tenantsCount === 0,
         ];
     }
 }
