@@ -267,6 +267,7 @@ Do NOT:
 
 7. Tailwind & UI
 	•	Use TailwindCSS as the primary styling mechanism.
+	•	Use PrimeVue as the primary UI-components library.
 	•	Keep UI minimalistic and functional:
 	•	Clear tables, cards and forms.
 	•	Collapsible sections for large JSON/text (prompts, responses).

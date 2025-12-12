@@ -78,12 +78,6 @@ const isActive = (href: string | { url: string }) => {
 
     <AppLayout :breadcrumbs="breadcrumbs">
         <div class="flex flex-col gap-4 p-4">
-            <div class="flex flex-col gap-1">
-                <h1 class="text-2xl font-semibold text-foreground">{{ project.name }}</h1>
-                <p class="text-sm text-muted-foreground">
-                    {{ project.description || 'Project container for prompts, chains and datasets.' }}
-                </p>
-            </div>
 
             <div class="flex flex-wrap gap-2">
                 <Link

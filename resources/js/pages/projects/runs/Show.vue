@@ -1,14 +1,15 @@
 <script setup lang="ts">
 import ProjectLayout from '@/layouts/app/ProjectLayout.vue';
 import runsRoutes from '@/routes/projects/runs';
-import { router, useForm } from '@inertiajs/vue3';
-import { computed, reactive } from 'vue';
+import { Link, router, useForm } from '@inertiajs/vue3';
+import { computed, reactive, watch } from 'vue';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import InputError from '@/components/InputError.vue';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { diffLines } from 'diff';
 
 interface ProjectPayload {
     id: number;
@@ -34,6 +35,7 @@ interface RunStepPayload {
     } | null;
     target_prompt_version_id?: number | null;
     target_prompt_template_id?: number | null;
+    target_prompt_content?: string | null;
     request_payload: Record<string, unknown>;
     response_raw: Record<string, unknown>;
     parsed_output: unknown;
@@ -48,6 +50,7 @@ interface RunStepPayload {
         rating?: number | null;
         comment?: string | null;
         suggested_prompt_content?: string | null;
+        analysis?: string | null;
     }[];
 }
 
@@ -66,10 +69,24 @@ interface RunPayload {
     finished_at?: string | null;
 }
 
+interface ProviderCredentialOption {
+    value: number;
+    label: string;
+    provider: string;
+}
+
+interface ModelOption {
+    id: string;
+    name: string;
+    display_name: string;
+}
+
 interface Props {
     project: ProjectPayload;
     run: RunPayload;
     steps: RunStepPayload[];
+    providerCredentials: ProviderCredentialOption[];
+    providerCredentialModels: Record<number, ModelOption[]>;
 }
 
 const props = defineProps<Props>();
@@ -139,21 +156,114 @@ const durationHuman = (ms?: number | null) => {
     return `${ms} ms`;
 };
 
+
 const feedbackForm = useForm({
     rating: null as number | null,
     comment: '',
     request_suggestion: false,
+    provider_credential_id: null as number | null,
+    model_name: '',
 });
 const feedbackModal = reactive({
     open: false,
     stepId: null as number | null,
 });
 
+const modelOptions = computed(() => {
+    const credentialId = feedbackForm.provider_credential_id;
+
+    if (!credentialId) return [];
+
+    return props.providerCredentialModels[credentialId] ?? [];
+});
+
+const handleProviderChange = () => {
+    if (!feedbackForm.provider_credential_id) {
+        feedbackForm.model_name = '';
+
+        return;
+    }
+
+    const firstModel = modelOptions.value[0];
+
+    feedbackForm.model_name = firstModel ? firstModel.id : '';
+};
+
+watch(
+    () => feedbackForm.request_suggestion,
+    (enabled) => {
+        if (!enabled) {
+            feedbackForm.provider_credential_id = null;
+            feedbackForm.model_name = '';
+        }
+    },
+);
+
 const openFeedback = (stepId: number) => {
     feedbackModal.open = true;
     feedbackModal.stepId = stepId;
     feedbackForm.reset();
 };
+
+type DiffLine = {
+    type: 'add' | 'remove' | 'context';
+    oldLine: number | null;
+    newLine: number | null;
+    text: string;
+};
+
+const buildDiffLines = (original: string, updated: string): DiffLine[] => {
+    const changes = diffLines(original || '', updated || '');
+    let oldLine = 1;
+    let newLine = 1;
+
+    return changes.flatMap((part) => {
+        const split = part.value.split('\n');
+
+        return split
+            .filter((_, idx) => !(idx === split.length - 1 && split[idx] === ''))
+            .map((line) => {
+                if (part.added) {
+                    return { type: 'add', oldLine: null, newLine: newLine++, text: line };
+                }
+
+                if (part.removed) {
+                    return { type: 'remove', oldLine: oldLine++, newLine: null, text: line };
+                }
+
+                return { type: 'context', oldLine: oldLine++, newLine: newLine++, text: line };
+            });
+    });
+};
+
+const diffLineClass = (type: DiffLine['type']) => {
+    if (type === 'add') return 'bg-emerald-50/70 text-emerald-900';
+    if (type === 'remove') return 'bg-red-50/70 text-red-900';
+
+    return 'text-foreground';
+};
+
+const diffLineSymbol = (type: DiffLine['type']) => {
+    if (type === 'add') return '+';
+    if (type === 'remove') return '-';
+
+    return ' ';
+};
+
+const feedbackDiffs = computed(() => {
+    const diffMap = new Map<number, DiffLine[]>();
+
+    props.steps.forEach((step) => {
+        const current = step.target_prompt_content || '';
+
+        step.feedback?.forEach((fb) => {
+            const suggestion = fb.suggested_prompt_content || '';
+            diffMap.set(fb.id, buildDiffLines(current, suggestion));
+        });
+    });
+
+    return diffMap;
+});
 
 const submitFeedback = () => {
     if (!feedbackModal.stepId) return;
@@ -185,12 +295,12 @@ const createVersionFromSuggestion = (step: RunStepPayload, feedbackId: number) =
                 <h2 class="text-xl font-semibold text-foreground">Run #{{ run.id }}</h2>
                 <p class="text-sm text-muted-foreground">Chain: {{ run.chain?.name || 'N/A' }}</p>
             </div>
-            <a
+            <Link
                 :href="runsRoutes.index(project.id).url"
                 class="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
             >
                 Back to runs
-            </a>
+            </Link>
         </div>
 
         <div class="mt-4 grid gap-3 md:grid-cols-3">
@@ -347,29 +457,110 @@ const createVersionFromSuggestion = (step: RunStepPayload, feedbackId: number) =
                                 >
                                     <div class="flex flex-wrap items-center justify-between gap-2">
                                         <div class="font-semibold text-foreground">
-                                            {{ fb.type === 'suggestion' ? 'LLM suggestion' : 'User feedback' }}
+                                            {{ fb.type === 'llm_suggestion' ? 'LLM suggestion' : 'User feedback' }}
                                         </div>
                                         <div class="text-xs text-muted-foreground">Rating: {{ fb.rating ?? '—' }}</div>
                                     </div>
                                     <p class="mt-1 text-muted-foreground text-sm">
                                         {{ fb.comment || 'No comment' }}
                                     </p>
+                                    <div v-if="fb.analysis" class="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                                        <div class="font-semibold">Analysis</div>
+                                        <p class="mt-1 whitespace-pre-wrap">{{ fb.analysis }}</p>
+                                    </div>
                                     <Collapsible v-if="fb.suggested_prompt_content">
                                         <CollapsibleTrigger as-child>
                                             <Button size="xs" variant="ghost" class="mt-2 px-0 text-xs">View suggestion</Button>
                                         </CollapsibleTrigger>
                                         <CollapsibleContent>
-                                            <pre class="mt-2 whitespace-pre-wrap rounded-md bg-card p-2 text-xs text-foreground">
-{{ fb.suggested_prompt_content }}
-                                            </pre>
-                                            <Button
-                                                size="xs"
-                                                class="mt-2"
-                                                :disabled="!step.target_prompt_template_id"
-                                                @click="createVersionFromSuggestion(step, fb.id)"
-                                            >
-                                                Create new version
-                                            </Button>
+                                            <div class="mt-2 space-y-3 rounded-md border border-border bg-card p-3">
+                                                <div class="flex items-center justify-between">
+                                                    <div class="text-sm font-semibold text-foreground">Prompt comparison</div>
+                                                    <div class="text-[11px] text-muted-foreground">Current vs suggested</div>
+                                                </div>
+                                                <div class="grid gap-3 lg:grid-cols-[1fr_1.1fr_1fr]">
+                                                    <div class="rounded-md border border-border/70 bg-muted/40">
+                                                        <div class="flex items-center justify-between border-b border-border/60 px-3 py-2">
+                                                            <div class="text-xs font-semibold text-foreground">Current prompt</div>
+                                                            <Button
+                                                                size="xs"
+                                                                variant="ghost"
+                                                                class="px-2 text-[11px]"
+                                                                @click="copyToClipboard(step.target_prompt_content || '')"
+                                                            >
+                                                                Copy
+                                                            </Button>
+                                                        </div>
+                                                        <pre class="max-h-64 overflow-auto whitespace-pre-wrap px-3 py-2 text-[11px] leading-relaxed text-foreground">
+{{ step.target_prompt_content || '—' }}
+                                                        </pre>
+                                                    </div>
+
+                                                    <div class="rounded-md border border-border/70 bg-muted/20">
+                                                        <div class="flex items-center justify-between border-b border-border/60 px-3 py-2">
+                                                            <div class="text-xs font-semibold text-foreground">Diff</div>
+                                                            <div class="text-[11px] text-muted-foreground">- / +</div>
+                                                        </div>
+                                                        <div class="max-h-64 overflow-auto text-[11px] font-mono leading-relaxed">
+                                                            <div
+                                                                v-for="(line, idx) in feedbackDiffs.get(fb.id) || []"
+                                                                :key="idx"
+                                                                class="flex gap-2 border-b border-border/50 px-3 py-1 last:border-0"
+                                                                :class="diffLineClass(line.type)"
+                                                            >
+                                                                <span class="w-10 shrink-0 text-right text-[10px] text-muted-foreground">
+                                                                    {{ line.oldLine ?? '' }}
+                                                                </span>
+                                                                <span class="w-10 shrink-0 text-right text-[10px] text-muted-foreground">
+                                                                    {{ line.newLine ?? '' }}
+                                                                </span>
+                                                                <span class="w-4 shrink-0 text-center font-semibold">
+                                                                    {{ diffLineSymbol(line.type) }}
+                                                                </span>
+                                                                <span class="whitespace-pre-wrap text-foreground/90">
+                                                                    {{ line.text || ' ' }}
+                                                                </span>
+                                                            </div>
+                                                            <div
+                                                                v-if="!(feedbackDiffs.get(fb.id) || []).length"
+                                                                class="px-3 py-2 text-muted-foreground"
+                                                            >
+                                                                No differences detected.
+                                                            </div>
+                                                        </div>
+                                                        <div class="border-t border-border/60 px-3 py-2 text-[11px] text-muted-foreground">
+                                                            Green = added, red = removed.
+                                                        </div>
+                                                    </div>
+
+                                                    <div class="rounded-md border border-border/70 bg-muted/40">
+                                                        <div class="flex items-center justify-between border-b border-border/60 px-3 py-2">
+                                                            <div class="text-xs font-semibold text-foreground">Suggested prompt</div>
+                                                            <Button
+                                                                size="xs"
+                                                                variant="ghost"
+                                                                class="px-2 text-[11px]"
+                                                                @click="copyToClipboard(fb.suggested_prompt_content || '')"
+                                                            >
+                                                                Copy
+                                                            </Button>
+                                                        </div>
+                                                        <pre class="max-h-64 overflow-auto whitespace-pre-wrap px-3 py-2 text-[11px] leading-relaxed text-foreground">
+{{ fb.suggested_prompt_content || '—' }}
+                                                        </pre>
+                                                    </div>
+                                                </div>
+                                                <div class="flex items-center justify-end">
+                                                    <Button
+                                                        size="xs"
+                                                        class="mt-1"
+                                                        :disabled="!step.target_prompt_template_id"
+                                                        @click="createVersionFromSuggestion(step, fb.id)"
+                                                    >
+                                                        Create new version
+                                                    </Button>
+                                                </div>
+                                            </div>
                                         </CollapsibleContent>
                                     </Collapsible>
                                 </div>
@@ -470,6 +661,45 @@ const createVersionFromSuggestion = (step: RunStepPayload, feedbackId: number) =
                             class="h-4 w-4 rounded border-border text-primary focus:ring-primary"
                         />
                         <Label for="fb_request_suggestion">Request suggestion from LLM</Label>
+                    </div>
+                    <InputError :message="feedbackForm.errors.suggestion" />
+                    <div v-if="feedbackForm.request_suggestion" class="grid gap-2">
+                        <Label for="fb_provider_credential_id">Provider credential</Label>
+                        <select
+                            id="fb_provider_credential_id"
+                            v-model.number="feedbackForm.provider_credential_id"
+                            name="provider_credential_id"
+                            @change="handleProviderChange"
+                            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                        >
+                            <option :value="null">Select provider credential</option>
+                            <option
+                                v-for="credential in providerCredentials"
+                                :key="credential.value"
+                                :value="credential.value"
+                            >
+                                {{ credential.label }}
+                            </option>
+                        </select>
+                        <InputError :message="feedbackForm.errors.provider_credential_id" />
+                    </div>
+                    <div v-if="feedbackForm.request_suggestion" class="grid gap-2">
+                        <Label for="fb_model_name">Model</Label>
+                        <select
+                            id="fb_model_name"
+                            v-model="feedbackForm.model_name"
+                            name="model_name"
+                            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                        >
+                            <option value="" disabled>Select model</option>
+                            <option v-for="model in modelOptions" :key="model.id" :value="model.id">
+                                {{ model.display_name }} ({{ model.name }})
+                            </option>
+                        </select>
+                        <p v-if="feedbackForm.provider_credential_id && !modelOptions.length" class="text-xs text-muted-foreground">
+                            No models available for this credential yet.
+                        </p>
+                        <InputError :message="feedbackForm.errors.model_name" />
                     </div>
                 </div>
                 <DialogFooter class="flex justify-end gap-2">

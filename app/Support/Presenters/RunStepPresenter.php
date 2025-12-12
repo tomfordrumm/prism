@@ -27,9 +27,11 @@ class RunStepPresenter
 
         $targetPromptVersionId = $this->targetPromptResolver->fromMessagesConfig($chainNode ? $chainNode->messages_config ?? [] : []);
         $targetTemplateId = null;
+        $targetPromptContent = null;
         if ($targetPromptVersionId) {
             $version = $promptVersions->get($targetPromptVersionId) ?? $promptVersions->firstWhere('id', $targetPromptVersionId);
             $targetTemplateId = $version?->prompt_template_id;
+            $targetPromptContent = $version?->content;
         }
 
         return [
@@ -45,6 +47,7 @@ class RunStepPresenter
             ] : null,
             'target_prompt_version_id' => $targetPromptVersionId,
             'target_prompt_template_id' => $targetTemplateId,
+            'target_prompt_content' => $targetPromptContent,
             'request_payload' => $step->request_payload,
             'response_raw' => $step->response_raw,
             'parsed_output' => $step->parsed_output,
@@ -61,6 +64,7 @@ class RunStepPresenter
                     'rating' => $feedback->rating,
                     'comment' => $feedback->comment,
                     'suggested_prompt_content' => $feedback->suggested_prompt_content,
+                    'analysis' => $feedback->analysis,
                 ];
             }),
         ];

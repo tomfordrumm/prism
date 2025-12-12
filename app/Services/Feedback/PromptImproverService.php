@@ -2,25 +2,30 @@
 
 namespace App\Services\Feedback;
 
-use App\Models\Feedback;
 use App\Models\PromptVersion;
+use App\Models\ProviderCredential;
 use App\Models\RunStep;
 use App\Services\Llm\LlmService;
+use App\Services\Prompts\PromptFileRenderer;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class PromptImproverService
 {
-    public function __construct(private LlmService $llmService)
-    {
+    public function __construct(
+        private LlmService $llmService,
+        private PromptFileRenderer $promptFileRenderer
+    ) {
     }
 
     public function suggest(
         RunStep $runStep,
         PromptVersion $targetPromptVersion,
-        string $comment
-    ): ?string {
-        $credential = $this->resolveJudgeCredential();
+        string $comment,
+        ?int $providerCredentialId = null,
+        ?string $modelName = null
+    ): ?array {
+        $credential = $this->resolveCredential($providerCredentialId);
 
         if (! $credential) {
             Log::warning('PromptImproverService: no judge credential found');
@@ -28,71 +33,70 @@ class PromptImproverService
             return null;
         }
 
-        $modelName = config('llm.judge_model', 'gpt-5.1-mini');
+        $modelName = $modelName ?: config('llm.judge_model', 'gpt-5.1-mini');
         $params = $this->judgeParams();
 
-        $messages = [
-            [
-                'role' => 'system',
-                'content' => 'You are a prompt engineer assistant. Improve the given prompt to address the feedback while keeping intent.',
-            ],
-            [
-                'role' => 'user',
-                'content' => $this->buildPayload($targetPromptVersion, $runStep, $comment),
-            ],
-        ];
+        $messages = $this->buildMessages($runStep, $targetPromptVersion, $comment);
 
         try {
             $response = $this->llmService->call($credential, $modelName, $messages, $params);
 
-            return $response->content;
+            return $this->extractImprovement($response->content);
         } catch (\Throwable $e) {
             Log::error('PromptImproverService failed', [
                 'error' => $e->getMessage(),
                 'run_step_id' => $runStep->id,
             ]);
 
-            return null;
+            throw new RuntimeException($e->getMessage() ?: 'Failed to fetch suggestion');
         }
     }
 
-    private function buildPayload(PromptVersion $promptVersion, RunStep $runStep, string $comment): string
+    private function buildMessages(RunStep $runStep, PromptVersion $targetPromptVersion, string $comment): array
     {
-        /** @var \App\Models\Run|null $run */
-        $run = $runStep->run;
-        $input = $run ? $run->input : [];
+        $requestPayload = (array) ($runStep->request_payload ?? []);
+        $messages = $requestPayload['messages'] ?? [];
 
-        /** @var array $response */
-        $response = $runStep->response_raw ?? [];
-        $answer = $response['choices'][0]['message']['content'] ?? '';
+        $systemPromptUsed = $this->extractMessageContent($messages, 'system');
+        $userPromptUsed = $this->extractMessageContent($messages, 'user');
+        $modelResponse = $this->extractModelResponse($runStep);
 
-        return <<<TXT
-Current prompt:
-{$promptVersion->content}
+        $systemPrompt = $this->promptFileRenderer->render('improver_system_prompt');
+        $userPrompt = $this->promptFileRenderer->render('improver_user_message', [
+            'sys_prompt' => $systemPromptUsed ?: '',
+            'user_prompt' => $userPromptUsed ?: $targetPromptVersion->content,
+            'model_response' => $modelResponse,
+            'customer_comment' => $comment,
+        ]);
 
-User feedback:
-{$comment}
-
-Input variables:
-{$this->prettyJson($input)}
-
-Model answer:
-{$answer}
-
-Return an improved prompt text only.
-TXT;
+        return [
+            [
+                'role' => 'system',
+                'content' => $systemPrompt,
+            ],
+            [
+                'role' => 'user',
+                'content' => $userPrompt,
+            ],
+        ];
     }
 
-    private function prettyJson(mixed $value): string
+    private function resolveCredential(?int $credentialId): ?ProviderCredential
     {
-        return json_encode($value, JSON_PRETTY_PRINT) ?: (string) $value;
+        if ($credentialId) {
+            return ProviderCredential::query()
+                ->where('tenant_id', currentTenantId())
+                ->find($credentialId);
+        }
+
+        return $this->resolveJudgeCredential();
     }
 
-    private function resolveJudgeCredential()
+    private function resolveJudgeCredential(): ?ProviderCredential
     {
         $credentialId = config('llm.judge_credential_id');
 
-        $query = \App\Models\ProviderCredential::query()
+        $query = ProviderCredential::query()
             ->where('tenant_id', currentTenantId());
 
         if ($credentialId) {
@@ -115,5 +119,80 @@ TXT;
         }
 
         return is_array($params) ? $params : [];
+    }
+
+    private function extractMessageContent(mixed $messages, string $role): ?string
+    {
+        if (! is_array($messages)) {
+            return null;
+        }
+
+        foreach ($messages as $message) {
+            if (is_array($message) && ($message['role'] ?? null) === $role) {
+                $content = $message['content'] ?? null;
+
+                if (is_string($content)) {
+                    return $content;
+                }
+
+                if (is_array($content)) {
+                    return json_encode($content, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private function extractModelResponse(RunStep $runStep): string
+    {
+        $raw = $runStep->response_raw ?? [];
+
+        if (is_array($raw)) {
+            $content = $raw['choices'][0]['message']['content'] ?? null;
+            if (! $content) {
+                $content = $raw['content'] ?? null;
+            }
+
+            if (is_string($content)) {
+                return $content;
+            }
+
+            if (is_array($content)) {
+                return json_encode($content, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '';
+            }
+        }
+
+        if (is_string($raw)) {
+            return $raw;
+        }
+
+        return '';
+    }
+
+    private function extractImprovement(string $content): ?array
+    {
+        $analysis = null;
+        $suggestion = null;
+
+        $decoded = json_decode($content, true);
+
+        if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+            $analysis = $decoded['analysis'] ?? null;
+            $suggestion = $decoded['improved_prompt'] ?? $decoded['improved prompt'] ?? null;
+        }
+
+        if (! $suggestion && ! $analysis) {
+            $suggestion = $content;
+        }
+
+        if ($suggestion === null && $analysis === null) {
+            return null;
+        }
+
+        return [
+            'suggestion' => $suggestion,
+            'analysis' => $analysis,
+        ];
     }
 }

@@ -29,6 +29,10 @@ class ChainViewService
         $providerCredentials = $this->providerCredentials();
         $promptTemplates = $this->promptTemplateOptions($project);
         $versionToTemplate = $this->mapVersionToTemplate($promptTemplates);
+        $templateMeta = $this->mapTemplateMeta($promptTemplates);
+        $latestVersionByTemplate = collect($promptTemplates)
+            ->mapWithKeys(fn (array $template) => [$template['id'] => $template['latest_version_id']])
+            ->all();
         $contextSample = $this->buildContextSample($chain);
 
         $chain->load([
@@ -40,6 +44,9 @@ class ChainViewService
         /** @var \Illuminate\Database\Eloquent\Collection<int, ChainNode> $nodes */
         $nodes = $chain->nodes;
 
+        $promptVersionIds = $this->collectPromptVersionIds($nodes, $latestVersionByTemplate, $versionToTemplate);
+        $promptVersions = $this->promptVersionsById($promptVersionIds);
+
         return [
             'project' => $project->only(['id', 'name', 'description']),
             'chain' => [
@@ -47,7 +54,13 @@ class ChainViewService
                 'name' => $chain->name,
                 'description' => $chain->description,
             ],
-            'nodes' => $this->presentNodes($nodes, $versionToTemplate),
+            'nodes' => $this->presentNodes(
+                $nodes,
+                $versionToTemplate,
+                $templateMeta,
+                $latestVersionByTemplate,
+                $promptVersions
+            ),
             'providerCredentials' => $this->providerCredentialOptions($providerCredentials),
             'providerCredentialModels' => $this->providerCredentialModels($providerCredentials),
             'providerOptions' => $this->providerOptions(),
@@ -57,9 +70,20 @@ class ChainViewService
         ];
     }
 
-    private function presentNodes(Collection $nodes, array $versionToTemplate): array
+    private function presentNodes(
+        Collection $nodes,
+        array $versionToTemplate,
+        array $templateMeta,
+        array $latestVersionByTemplate,
+        array $promptVersions
+    ): array
     {
-        return $nodes->map(function (ChainNode $node) use ($versionToTemplate): array {
+        return $nodes->map(function (ChainNode $node) use (
+            $versionToTemplate,
+            $templateMeta,
+            $latestVersionByTemplate,
+            $promptVersions
+        ): array {
             /** @var array[] $messagesConfig */
             $messagesConfig = (array) $node->messages_config;
 
@@ -77,6 +101,27 @@ class ChainViewService
             /** @var ProviderCredential|null $providerCredential */
             $providerCredential = $node->providerCredential;
 
+            $systemDetails = $this->buildMessageDetails(
+                'system',
+                $messages,
+                $versionToTemplate,
+                $templateMeta,
+                $latestVersionByTemplate,
+                $promptVersions
+            );
+            $userDetails = $this->buildMessageDetails(
+                'user',
+                $messages,
+                $versionToTemplate,
+                $templateMeta,
+                $latestVersionByTemplate,
+                $promptVersions
+            );
+            $variablesUsed = array_values(array_unique(array_merge(
+                $systemDetails['variables'] ?? [],
+                $userDetails['variables'] ?? []
+            )));
+
             return [
                 'id' => $node->id,
                 'name' => $node->name,
@@ -92,6 +137,11 @@ class ChainViewService
                 'model_name' => $node->model_name,
                 'model_params' => $node->model_params ?? [],
                 'messages_config' => $messages,
+                'prompt_details' => [
+                    'system' => $systemDetails,
+                    'user' => $userDetails,
+                ],
+                'variables_used' => $variablesUsed,
                 'output_schema_definition' => $node->output_schema_definition,
                 'output_schema' => $node->output_schema,
                 'stop_on_validation_error' => $node->stop_on_validation_error,
@@ -303,5 +353,167 @@ class ChainViewService
         }
 
         return $map;
+    }
+
+    private function collectPromptVersionIds(
+        Collection $nodes,
+        array $latestVersionByTemplate,
+        array $versionToTemplate
+    ): array {
+        $ids = [];
+
+        $nodes->each(function (ChainNode $node) use (&$ids, $latestVersionByTemplate, $versionToTemplate): void {
+            $messages = (array) $node->messages_config;
+
+            foreach ($messages as $message) {
+                if (! is_array($message)) {
+                    continue;
+                }
+
+                $versionId = $message['prompt_version_id'] ?? null;
+                $templateId = $message['prompt_template_id'] ?? null;
+
+                if (! $templateId && $versionId) {
+                    $templateId = $versionToTemplate[$versionId] ?? null;
+                }
+
+                if (! $versionId && $templateId) {
+                    $versionId = $latestVersionByTemplate[$templateId] ?? null;
+                }
+
+                if ($versionId) {
+                    $ids[] = $versionId;
+                }
+            }
+        });
+
+        return array_values(array_unique($ids));
+    }
+
+    private function promptVersionsById(array $ids): array
+    {
+        if (! $ids) {
+            return [];
+        }
+
+        return PromptVersion::query()
+            ->where('tenant_id', currentTenantId())
+            ->whereIn('id', $ids)
+            ->get(['id', 'prompt_template_id', 'version', 'content'])
+            ->mapWithKeys(fn (PromptVersion $version) => [
+                $version->id => [
+                    'id' => $version->id,
+                    'prompt_template_id' => $version->prompt_template_id,
+                    'version' => $version->version,
+                    'content' => $version->content,
+                ],
+            ])
+            ->all();
+    }
+
+    private function mapTemplateMeta(array $promptTemplates): array
+    {
+        return collect($promptTemplates)
+            ->mapWithKeys(fn (array $template) => [
+                $template['id'] => [
+                    'name' => $template['name'],
+                    'variables' => $template['variables'] ?? [],
+                    'latest_version_id' => $template['latest_version_id'] ?? null,
+                ],
+            ])
+            ->all();
+    }
+
+    private function buildMessageDetails(
+        string $role,
+        array $messages,
+        array $versionToTemplate,
+        array $templateMeta,
+        array $latestVersionByTemplate,
+        array $promptVersions
+    ): ?array {
+        $message = collect($messages)
+            ->filter(fn ($item) => is_array($item))
+            ->firstWhere('role', $role);
+
+        if (! $message) {
+            return null;
+        }
+
+        $mode = $message['mode'] ?? 'template';
+        $templateId = $message['prompt_template_id'] ?? null;
+        $versionId = $message['prompt_version_id'] ?? null;
+
+        if (! $templateId && $versionId) {
+            $templateId = $versionToTemplate[$versionId] ?? null;
+        }
+
+        if (! $versionId && $templateId) {
+            $versionId = $latestVersionByTemplate[$templateId] ?? null;
+        }
+
+        $templateInfo = $templateMeta[$templateId] ?? ['variables' => [], 'name' => null];
+        $versionInfo = $versionId ? ($promptVersions[$versionId] ?? null) : null;
+        $content = $mode === 'inline'
+            ? ($message['inline_content'] ?? null)
+            : ($versionInfo['content'] ?? null);
+
+        $variables = $this->collectVariablesForMessage($message, $templateInfo['variables'] ?? [], $content);
+
+        return [
+            'mode' => $mode,
+            'template_id' => $templateId,
+            'template_name' => $templateInfo['name'] ?? null,
+            'prompt_version_id' => $versionId,
+            'prompt_version' => $versionInfo['version'] ?? null,
+            'content' => $content,
+            'variables' => $variables,
+        ];
+    }
+
+    private function collectVariablesForMessage(array $message, array $templateVariables, ?string $content): array
+    {
+        $fromMappings = isset($message['variables']) && is_array($message['variables'])
+            ? array_keys($message['variables'])
+            : [];
+
+        $normalizedTemplateVars = collect($templateVariables)
+            ->map(function ($variable) {
+                if (is_string($variable)) {
+                    return $variable;
+                }
+
+                if (is_array($variable) && isset($variable['name'])) {
+                    return $variable['name'];
+                }
+
+                return null;
+            })
+            ->filter()
+            ->values()
+            ->all();
+
+        $inlineVars = $this->extractVariablesFromContent($content);
+
+        return array_values(array_unique(array_filter([
+            ...$fromMappings,
+            ...$normalizedTemplateVars,
+            ...$inlineVars,
+        ], fn ($value) => is_string($value) && trim($value) !== '')));
+    }
+
+    private function extractVariablesFromContent(?string $content): array
+    {
+        if (! $content) {
+            return [];
+        }
+
+        preg_match_all('/\\{\\{\\s*([a-zA-Z_][a-zA-Z0-9_.]*)\\s*\\}\\}/', $content, $matches);
+
+        if (! $matches || ! isset($matches[1])) {
+            return [];
+        }
+
+        return array_values(array_unique($matches[1]));
     }
 }

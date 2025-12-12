@@ -4,11 +4,13 @@ namespace App\Services\Runs;
 
 use App\Models\Dataset;
 use App\Models\Chain;
+use App\Models\ProviderCredential;
 use App\Models\Project;
 use App\Models\Run;
 use App\Models\RunStep;
 use App\Models\TestCase;
 use App\Models\PromptVersion;
+use App\Services\Llm\ModelCatalog;
 use App\Support\Presenters\RunStepPresenter;
 use App\Support\TargetPromptResolver;
 use Illuminate\Support\Collection;
@@ -17,7 +19,8 @@ class RunViewService
 {
     public function __construct(
         private TargetPromptResolver $targetPromptResolver,
-        private RunStepPresenter $runStepPresenter
+        private RunStepPresenter $runStepPresenter,
+        private ModelCatalog $modelCatalog
     ) {
     }
 
@@ -77,12 +80,13 @@ class RunViewService
 
         /** @var \Illuminate\Database\Eloquent\Collection<int, RunStep> $stepsCollection */
         $stepsCollection = $run->steps;
+        $providerCredentials = $this->providerCredentials();
 
         $targetPromptVersionIds = $this->targetPromptResolver->collectTargetVersionIds($stepsCollection);
 
         $promptVersions = PromptVersion::query()
             ->whereIn('id', $targetPromptVersionIds)
-            ->get(['id', 'prompt_template_id'])
+            ->get(['id', 'prompt_template_id', 'content'])
             ->keyBy('id');
 
         /** @var Chain|null $chain */
@@ -118,6 +122,8 @@ class RunViewService
                 'finished_at' => $run->finished_at,
             ],
             'steps' => $this->presentSteps($stepsCollection, $promptVersions),
+            'providerCredentials' => $this->providerCredentialOptions($providerCredentials),
+            'providerCredentialModels' => $this->providerCredentialModels($providerCredentials),
         ];
     }
 
@@ -131,5 +137,33 @@ class RunViewService
             ->map(fn (RunStep $step): array => $this->runStepPresenter->present($step, $promptVersions))
             ->values()
             ->all();
+    }
+
+    private function providerCredentialOptions(Collection $providerCredentials): array
+    {
+        return $providerCredentials
+            ->map(fn (ProviderCredential $credential) => [
+                'value' => $credential->id,
+                'label' => sprintf('%s (%s)', $credential->name, $credential->provider),
+                'provider' => $credential->provider,
+            ])
+            ->all();
+    }
+
+    private function providerCredentialModels(Collection $providerCredentials): array
+    {
+        return $providerCredentials
+            ->mapWithKeys(fn (ProviderCredential $credential) => [
+                $credential->id => $this->modelCatalog->getModelsFor($credential),
+            ])
+            ->all();
+    }
+
+    private function providerCredentials(): Collection
+    {
+        return ProviderCredential::query()
+            ->where('tenant_id', currentTenantId())
+            ->orderBy('name')
+            ->get(['id', 'name', 'provider']);
     }
 }

@@ -1,0 +1,14 @@
+<input>
+    <Current_System_Prompt>
+        {{sys_prompt}}
+    </Current_System_Prompt>
+    <Current_User_Prompt>
+        {{user_prompt}}
+    </Current_User_Prompt>
+    <Model_Output>
+        {{model_response}}
+    </Model_Output>
+    <Critique_Feedback>
+        {{customer_comment}}
+    </Critique_Feedback>
+</input>
