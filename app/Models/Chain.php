@@ -19,6 +19,7 @@ class Chain extends Model
     {
         return [
             'is_active' => 'boolean',
+            'is_quick_prompt' => 'boolean',
         ];
     }
 

@@ -2,7 +2,7 @@
 import ProjectLayout from '@/layouts/app/ProjectLayout.vue';
 import prompts from '@/routes/projects/prompts';
 import { useForm } from '@inertiajs/vue3';
-import { computed, ref, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
 
 interface ProjectPayload {
     id: number;
@@ -43,11 +44,25 @@ interface VersionPayload {
     content?: string;
 }
 
+interface ProviderCredentialOption {
+    value: number;
+    label: string;
+    provider: string;
+}
+
+interface ModelOption {
+    id: string;
+    name: string;
+    display_name: string;
+}
+
 interface Props {
     project: ProjectPayload;
     template: TemplatePayload;
     versions: VersionPayload[];
     selectedVersion: VersionPayload | null;
+    providerCredentials: ProviderCredentialOption[];
+    providerCredentialModels: Record<number, ModelOption[]>;
 }
 
 const props = defineProps<Props>();
@@ -56,6 +71,7 @@ const editorContent = ref(selectedVersion.value?.content ?? '');
 const changelog = ref('');
 const showVersions = ref(false);
 const showVariables = ref(false);
+const showRunModal = ref(false);
 
 const hasChanges = computed(
     () => !!selectedVersion.value && editorContent.value !== (selectedVersion.value.content ?? '')
@@ -65,6 +81,68 @@ const form = useForm({
     content: '',
     changelog: '',
 });
+
+const defaultVariables = computed(() => {
+    if (!props.template.variables || !props.template.variables.length) return '{}';
+
+    const templateVars: Record<string, unknown> = {};
+    props.template.variables.forEach((v) => {
+        templateVars[v.name] = '';
+    });
+
+    return JSON.stringify(templateVars, null, 2);
+});
+
+const runForm = useForm({
+    provider_credential_id: props.providerCredentials[0]?.value ?? null,
+    model_name: '',
+    variables: defaultVariables.value,
+});
+
+const modelOptions = computed(() => {
+    const credentialId = runForm.provider_credential_id;
+
+    if (!credentialId) return [];
+
+    return props.providerCredentialModels[credentialId] ?? [];
+});
+
+const handleProviderChange = () => {
+    const firstModel = modelOptions.value[0];
+    runForm.model_name = firstModel ? firstModel.id : '';
+};
+
+const openRunModal = () => {
+    if (!modelOptions.value.length) {
+        handleProviderChange();
+    }
+    showRunModal.value = true;
+};
+
+watch(
+    () => runForm.provider_credential_id,
+    () => handleProviderChange(),
+    { immediate: true }
+);
+
+const submitRun = () => {
+    runForm.post(
+        `/projects/${props.project.id}/prompts/${props.template.id}/run`,
+        {
+            preserveScroll: true,
+            onSuccess: () => {
+                showRunModal.value = false;
+            },
+        }
+    );
+};
+
+const canRunPrompt = computed(
+    () =>
+        Boolean(runForm.provider_credential_id) &&
+        Boolean(runForm.model_name) &&
+        props.providerCredentials.length > 0
+);
 
 const loadVersion = (version: VersionPayload) => {
     selectedVersion.value = version;
@@ -130,6 +208,13 @@ watch(
                     </p>
                 </div>
                 <div class="flex items-center gap-2">
+                    <Button
+                        size="sm"
+                        :disabled="!canRunPrompt"
+                        @click="openRunModal"
+                    >
+                        <Spinner v-if="runForm.processing" class="mr-2" /> Run prompt
+                    </Button>
                     <Button variant="outline" size="sm" @click="showVariables = true">Variables</Button>
                     <Button variant="outline" size="sm" @click="showVersions = true">Versions</Button>
                 </div>
@@ -181,6 +266,72 @@ watch(
                 <InputError :message="form.errors.content" />
             </div>
         </div>
+
+        <Dialog :open="showRunModal" @update:open="showRunModal = $event">
+            <DialogContent class="sm:max-w-lg">
+                <DialogHeader>
+                    <DialogTitle>Run prompt (latest version)</DialogTitle>
+                </DialogHeader>
+                <div class="space-y-4">
+                    <div class="grid gap-2">
+                        <Label for="run_provider_credential_id">Provider credential</Label>
+                        <select
+                            id="run_provider_credential_id"
+                            v-model.number="runForm.provider_credential_id"
+                            name="provider_credential_id"
+                            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                        >
+                            <option v-if="!providerCredentials.length" disabled :value="null">No credentials available</option>
+                            <option
+                                v-for="credential in providerCredentials"
+                                :key="credential.value"
+                                :value="credential.value"
+                            >
+                                {{ credential.label }}
+                            </option>
+                        </select>
+                        <InputError :message="runForm.errors.provider_credential_id" />
+                    </div>
+
+                    <div class="grid gap-2">
+                        <Label for="run_model_name">Model</Label>
+                        <select
+                            id="run_model_name"
+                            v-model="runForm.model_name"
+                            name="model_name"
+                            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                        >
+                            <option value="" disabled>Select model</option>
+                            <option v-for="model in modelOptions" :key="model.id" :value="model.id">
+                                {{ model.display_name }} ({{ model.name }})
+                            </option>
+                        </select>
+                        <p v-if="runForm.provider_credential_id && !modelOptions.length" class="text-xs text-muted-foreground">
+                            No models available for this credential yet.
+                        </p>
+                        <InputError :message="runForm.errors.model_name" />
+                    </div>
+
+                    <div class="grid gap-2">
+                        <Label for="run_variables">Variables (JSON)</Label>
+                        <textarea
+                            id="run_variables"
+                            v-model="runForm.variables"
+                            rows="6"
+                            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                            placeholder='{"topic": "React hooks"}'
+                        ></textarea>
+                        <InputError :message="runForm.errors.variables" />
+                    </div>
+                </div>
+                <DialogFooter class="mt-4">
+                    <Button variant="outline" size="sm" @click="showRunModal = false">Cancel</Button>
+                    <Button size="sm" :disabled="runForm.processing || !canRunPrompt" @click="submitRun">
+                        <Spinner v-if="runForm.processing" class="mr-2" /> Run prompt
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
 
         <Dialog :open="showVersions" @update:open="showVersions = $event">
             <DialogContent class="sm:max-w-lg">

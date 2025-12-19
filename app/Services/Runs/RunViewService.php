@@ -71,6 +71,18 @@ class RunViewService
 
     public function showData(Project $project, Run $run): array
     {
+        $details = $this->runDetails($project, $run);
+        $providerCredentials = $this->providerCredentials();
+
+        return [
+            ...$details,
+            'providerCredentials' => $this->providerCredentialOptions($providerCredentials),
+            'providerCredentialModels' => $this->providerCredentialModels($providerCredentials),
+        ];
+    }
+
+    public function runDetails(Project $project, Run $run): array
+    {
         $run->load([
             'chain:id,name',
             'dataset:id,name',
@@ -80,7 +92,6 @@ class RunViewService
 
         /** @var \Illuminate\Database\Eloquent\Collection<int, RunStep> $stepsCollection */
         $stepsCollection = $run->steps;
-        $providerCredentials = $this->providerCredentials();
 
         $targetPromptVersionIds = $this->targetPromptResolver->collectTargetVersionIds($stepsCollection);
 
@@ -122,8 +133,6 @@ class RunViewService
                 'finished_at' => $run->finished_at,
             ],
             'steps' => $this->presentSteps($stepsCollection, $promptVersions),
-            'providerCredentials' => $this->providerCredentialOptions($providerCredentials),
-            'providerCredentialModels' => $this->providerCredentialModels($providerCredentials),
         ];
     }
 

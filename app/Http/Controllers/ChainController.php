@@ -25,6 +25,7 @@ class ChainController extends Controller
         $chains = Chain::query()
             ->withCount('nodes')
             ->where('project_id', $project->id)
+            ->where('is_quick_prompt', false)
             ->orderBy('name')
             ->get()
             ->map(fn (Chain $chain) => [

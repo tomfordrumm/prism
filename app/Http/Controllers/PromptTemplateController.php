@@ -4,15 +4,22 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\PromptTemplates\StorePromptTemplateRequest;
 use App\Http\Requests\PromptTemplates\StorePromptVersionRequest;
+use App\Models\ProviderCredential;
 use App\Models\Project;
 use App\Models\PromptVersion;
 use App\Models\PromptTemplate;
+use App\Services\Llm\ModelCatalog;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Collection;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class PromptTemplateController extends Controller
 {
+    public function __construct(private ModelCatalog $modelCatalog)
+    {
+    }
+
     public function index(Project $project): Response
     {
         /** @var \Illuminate\Database\Eloquent\Collection<int, PromptTemplate> $templates */
@@ -22,6 +29,8 @@ class PromptTemplateController extends Controller
             ->orderByDesc('updated_at')
             ->orderBy('name')
             ->get();
+
+        $providerCredentials = $this->providerCredentials();
 
         $templateList = $templates->map(function (PromptTemplate $template): array {
             /** @var PromptVersion|null $latestVersion = $template->latestVersion */
@@ -93,6 +102,8 @@ class PromptTemplateController extends Controller
                     'content' => $selectedVersion->content,
                 ]
                 : null,
+            'providerCredentials' => $this->providerCredentialOptions($providerCredentials),
+            'providerCredentialModels' => $this->providerCredentialModels($providerCredentials),
         ]);
     }
 
@@ -141,6 +152,8 @@ class PromptTemplateController extends Controller
             ->firstWhere('version', $requestedVersion)
             ?? $promptVersions->first();
 
+        $providerCredentials = $this->providerCredentials();
+
         return Inertia::render('projects/prompts/Show', [
             'project' => $project->only(['id', 'name', 'description']),
             'template' => [
@@ -167,6 +180,8 @@ class PromptTemplateController extends Controller
                     'content' => $selectedVersion->content,
                 ]
                 : null,
+            'providerCredentials' => $this->providerCredentialOptions($providerCredentials),
+            'providerCredentialModels' => $this->providerCredentialModels($providerCredentials),
         ]);
     }
 
@@ -203,5 +218,33 @@ class PromptTemplateController extends Controller
         if ($template->project_id !== $project->id || $template->tenant_id !== $project->tenant_id) {
             abort(404);
         }
+    }
+
+    private function providerCredentials(): Collection
+    {
+        return ProviderCredential::query()
+            ->where('tenant_id', currentTenantId())
+            ->orderBy('name')
+            ->get(['id', 'name', 'provider']);
+    }
+
+    private function providerCredentialOptions(Collection $providerCredentials): array
+    {
+        return $providerCredentials
+            ->map(fn (ProviderCredential $credential) => [
+                'value' => $credential->id,
+                'label' => sprintf('%s (%s)', $credential->name, $credential->provider),
+                'provider' => $credential->provider,
+            ])
+            ->all();
+    }
+
+    private function providerCredentialModels(Collection $providerCredentials): array
+    {
+        return $providerCredentials
+            ->mapWithKeys(fn (ProviderCredential $credential) => [
+                $credential->id => $this->modelCatalog->getModelsFor($credential),
+            ])
+            ->all();
     }
 }

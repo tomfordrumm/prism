@@ -7,6 +7,7 @@ use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProviderCredentialController;
 use App\Http\Controllers\TenantController;
 use App\Http\Controllers\PromptTemplateController;
+use App\Http\Controllers\PromptRunController;
 use App\Http\Controllers\ChainController;
 use App\Http\Controllers\ChainNodeController;
 use App\Http\Controllers\RunController;
@@ -35,6 +36,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/prompts', [PromptTemplateController::class, 'store'])->name('projects.prompts.store');
         Route::get('/prompts/{promptTemplate}', [PromptTemplateController::class, 'show'])->name('projects.prompts.show');
         Route::post('/prompts/{promptTemplate}/versions', [PromptTemplateController::class, 'storeVersion'])->name('projects.prompts.versions.store');
+        Route::post('/prompts/{promptTemplate}/run', [PromptRunController::class, 'store'])->name('projects.prompts.run');
 
         Route::get('/chains', [ChainController::class, 'index'])->name('projects.chains.index');
         Route::get('/chains/create', [ChainController::class, 'create'])->name('projects.chains.create');
@@ -51,6 +53,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
         Route::get('/runs', [RunController::class, 'index'])->name('projects.runs.index');
         Route::get('/runs/{run}', [RunController::class, 'show'])->name('projects.runs.show');
+        Route::get('/runs/{run}/stream', [RunController::class, 'stream'])->name('projects.runs.stream');
 
         Route::get('/datasets', [DatasetController::class, 'index'])->name('projects.datasets.index');
         Route::get('/datasets/create', [DatasetController::class, 'create'])->name('projects.datasets.create');

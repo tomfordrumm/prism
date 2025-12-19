@@ -2,11 +2,12 @@
 import ProjectLayout from '@/layouts/app/ProjectLayout.vue';
 import runsRoutes from '@/routes/projects/runs';
 import { Link, router, useForm } from '@inertiajs/vue3';
-import { computed, reactive, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Spinner } from '@/components/ui/spinner';
 import InputError from '@/components/InputError.vue';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { diffLines } from 'diff';
@@ -91,7 +92,11 @@ interface Props {
 
 const props = defineProps<Props>();
 
-const sortedSteps = computed(() => [...props.steps].sort((a, b) => a.order_index - b.order_index));
+const run = ref<RunPayload>({ ...props.run });
+const steps = ref<RunStepPayload[]>([...props.steps]);
+const eventSource = ref<EventSource | null>(null);
+
+const sortedSteps = computed(() => [...steps.value].sort((a, b) => a.order_index - b.order_index));
 
 const jsonPretty = (value: unknown) => {
     try {
@@ -100,6 +105,51 @@ const jsonPretty = (value: unknown) => {
         return String(value);
     }
 };
+
+const isLiveStatus = (status?: string | null) => ['pending', 'running'].includes(status ?? '');
+
+const startStream = () => {
+    if (typeof window === 'undefined') return;
+    if (!isLiveStatus(run.value.status)) return;
+
+    const streamUrl = `/projects/${props.project.id}/runs/${run.value.id}/stream`;
+
+    if (eventSource.value) {
+        eventSource.value.close();
+    }
+
+    const es = new EventSource(streamUrl);
+    eventSource.value = es;
+
+    es.onmessage = (event) => {
+        try {
+            const payload = JSON.parse(event.data || '{}');
+            if (payload.run) {
+                run.value = payload.run;
+            }
+            if (payload.steps) {
+                steps.value = payload.steps;
+            }
+
+            if (!isLiveStatus(payload.run?.status ?? run.value.status)) {
+                es.close();
+                eventSource.value = null;
+            }
+        } catch (error) {
+            console.error('Failed to parse run stream payload', error);
+        }
+    };
+
+    es.onerror = () => {
+        es.close();
+        eventSource.value = null;
+    };
+};
+
+onMounted(startStream);
+onBeforeUnmount(() => {
+    eventSource.value?.close();
+});
 
 const statusBadgeClass = (status: string) =>
     status === 'success'
@@ -253,7 +303,7 @@ const diffLineSymbol = (type: DiffLine['type']) => {
 const feedbackDiffs = computed(() => {
     const diffMap = new Map<number, DiffLine[]>();
 
-    props.steps.forEach((step) => {
+    steps.value.forEach((step) => {
         const current = step.target_prompt_content || '';
 
         step.feedback?.forEach((fb) => {
@@ -268,7 +318,7 @@ const feedbackDiffs = computed(() => {
 const submitFeedback = () => {
     if (!feedbackModal.stepId) return;
 
-    feedbackForm.post(`/runs/${props.run.id}/steps/${feedbackModal.stepId}/feedback`, {
+    feedbackForm.post(`/runs/${run.value.id}/steps/${feedbackModal.stepId}/feedback`, {
         preserveScroll: true,
         onSuccess: () => {
             feedbackModal.open = false;
@@ -307,6 +357,7 @@ const createVersionFromSuggestion = (step: RunStepPayload, feedbackId: number) =
             <div class="rounded-lg border border-border bg-card p-4 shadow-sm">
                 <p class="text-xs uppercase text-muted-foreground">Status</p>
                 <div class="mt-2 flex items-center gap-2">
+                    <Spinner v-if="isLiveStatus(run.status)" class="text-primary" />
                     <span class="rounded-md px-2 py-1 text-xs font-semibold" :class="statusBadgeClass(run.status)">
                         {{ run.status.toUpperCase() }}
                     </span>

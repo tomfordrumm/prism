@@ -40,6 +40,40 @@ class RunController extends Controller
         return Inertia::render('projects/runs/Show', $viewData);
     }
 
+    public function stream(Project $project, Run $run)
+    {
+        $this->assertRunProject($run, $project);
+
+        return response()->stream(function () use ($project, $run) {
+            while (true) {
+                $run->refresh();
+
+                $payload = $this->runViewService->runDetails($project, $run);
+
+                echo 'data: '.json_encode([
+                    'run' => $payload['run'],
+                    'steps' => $payload['steps'],
+                ])."\n\n";
+
+                if (function_exists('ob_flush')) {
+                    @ob_flush();
+                }
+                flush();
+
+                if (! in_array($run->status, ['pending', 'running'], true) || connection_aborted()) {
+                    break;
+                }
+
+                sleep(1);
+            }
+        }, 200, [
+            'Content-Type' => 'text/event-stream',
+            'Cache-Control' => 'no-cache, no-transform',
+            'Connection' => 'keep-alive',
+            'X-Accel-Buffering' => 'no',
+        ]);
+    }
+
     public function run(
         RunChainRequest $request,
         Project $project,
