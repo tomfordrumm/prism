@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 
 interface ProjectListItem {
     id: number;
+    uuid: string;
     name: string;
     description?: string | null;
 }
@@ -52,8 +53,8 @@ const breadcrumbs: BreadcrumbItem[] = [
             <div class="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
                 <Link
                     v-for="project in projects"
-                    :key="project.id"
-                    :href="showProject({ project: project.id }).url"
+                    :key="project.uuid"
+                    :href="showProject({ project: project.uuid }).url"
                     class="block rounded-lg border border-border bg-card p-4 transition hover:border-primary"
                 >
                     <div class="flex items-center justify-between">

@@ -4,6 +4,7 @@ import runsRoutes from '@/routes/projects/runs';
 import { Link, router, useForm } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { Button } from '@/components/ui/button';
+import Icon from '@/components/Icon.vue';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,6 +15,7 @@ import { diffLines } from 'diff';
 
 interface ProjectPayload {
     id: number;
+    uuid: string;
     name: string;
     description?: string | null;
 }
@@ -59,12 +61,14 @@ interface RunPayload {
     id: number;
     status: string;
     chain: ChainInfo | null;
+    chain_label?: string | null;
     dataset?: { id: number; name: string } | null;
     test_case?: { id: number; name: string } | null;
     input: Record<string, unknown> | null;
     chain_snapshot: Record<string, unknown> | null;
     total_tokens_in?: number | null;
     total_tokens_out?: number | null;
+    total_cost?: number | string | null;
     duration_ms?: number | null;
     created_at: string;
     finished_at?: string | null;
@@ -97,6 +101,19 @@ const steps = ref<RunStepPayload[]>([...props.steps]);
 const eventSource = ref<EventSource | null>(null);
 
 const sortedSteps = computed(() => [...steps.value].sort((a, b) => a.order_index - b.order_index));
+const finalStep = computed(() => sortedSteps.value[sortedSteps.value.length - 1] ?? null);
+const selectedStepId = ref<number | null>(null);
+const selectedStep = computed(
+    () => sortedSteps.value.find((step) => step.id === selectedStepId.value) ?? null
+);
+const tokenUsageLabel = computed(() => {
+    const tokensIn = run.value.total_tokens_in;
+    const tokensOut = run.value.total_tokens_out;
+
+    if (tokensIn == null && tokensOut == null) return '—';
+
+    return `${tokensIn ?? '—'} / ${tokensOut ?? '—'}`;
+});
 
 const jsonPretty = (value: unknown) => {
     try {
@@ -112,7 +129,7 @@ const startStream = () => {
     if (typeof window === 'undefined') return;
     if (!isLiveStatus(run.value.status)) return;
 
-    const streamUrl = `/projects/${props.project.id}/runs/${run.value.id}/stream`;
+const streamUrl = `/projects/${props.project.uuid}/runs/${run.value.id}/stream`;
 
     if (eventSource.value) {
         eventSource.value.close();
@@ -206,6 +223,25 @@ const durationHuman = (ms?: number | null) => {
     return `${ms} ms`;
 };
 
+const formatTimestamp = (value?: string | null) => {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+
+    return date.toLocaleString(undefined, {
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+};
+
+const formatCost = (value?: number | string | null) => {
+    if (value == null) return null;
+    const num = typeof value === 'string' ? Number(value) : value;
+    if (Number.isNaN(num)) return String(value);
+    return `$${num.toFixed(4)}`;
+};
 
 const feedbackForm = useForm({
     rating: null as number | null,
@@ -254,6 +290,27 @@ const openFeedback = (stepId: number) => {
     feedbackModal.stepId = stepId;
     feedbackForm.reset();
 };
+
+const openFinalFeedback = () => {
+    if (!finalStep.value) return;
+    openFeedback(finalStep.value.id);
+};
+
+const selectDefaultStep = () => {
+    if (!sortedSteps.value.length) {
+        selectedStepId.value = null;
+        return;
+    }
+
+    if (selectedStepId.value && sortedSteps.value.some((step) => step.id === selectedStepId.value)) {
+        return;
+    }
+
+    const failedStep = sortedSteps.value.find((step) => step.status === 'failed');
+    selectedStepId.value = failedStep?.id ?? sortedSteps.value[sortedSteps.value.length - 1].id;
+};
+
+watch(() => sortedSteps.value, () => selectDefaultStep(), { immediate: true });
 
 type DiffLine = {
     type: 'add' | 'remove' | 'context';
@@ -330,7 +387,7 @@ const createVersionFromSuggestion = (step: RunStepPayload, feedbackId: number) =
     if (!step.target_prompt_template_id) return;
 
     router.post(
-        `/projects/${props.project.id}/prompts/${step.target_prompt_template_id}/versions/from-feedback`,
+        `/projects/${props.project.uuid}/prompts/${step.target_prompt_template_id}/versions/from-feedback`,
         {
             feedback_id: feedbackId,
         },
@@ -340,322 +397,203 @@ const createVersionFromSuggestion = (step: RunStepPayload, feedbackId: number) =
 
 <template>
     <ProjectLayout :project="project" :title-suffix="`Runs • #${run.id}`">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-                <h2 class="text-xl font-semibold text-foreground">Run #{{ run.id }}</h2>
-                <p class="text-sm text-muted-foreground">Chain: {{ run.chain?.name || 'N/A' }}</p>
+        <div class="flex h-12 items-center gap-4 border-b border-border/60 px-4 text-sm">
+            <div class="flex items-center gap-2">
+                <h2 class="text-base font-semibold text-foreground">Run #{{ run.id }}</h2>
+                <span class="text-sm text-muted-foreground">
+                    {{ run.chain_label || run.chain?.name || 'Prompt run' }}
+                </span>
             </div>
-            <Link
-                :href="runsRoutes.index(project.id).url"
-                class="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground hover:text-foreground"
-            >
-                Back to runs
-            </Link>
-        </div>
-
-        <div class="mt-4 grid gap-3 md:grid-cols-3">
-            <div class="rounded-lg border border-border bg-card p-4 shadow-sm">
-                <p class="text-xs uppercase text-muted-foreground">Status</p>
-                <div class="mt-2 flex items-center gap-2">
+            <span class="h-4 w-px bg-border/70"></span>
+            <div class="flex flex-wrap items-center gap-4 text-muted-foreground">
+                <div class="flex items-center gap-2">
                     <Spinner v-if="isLiveStatus(run.status)" class="text-primary" />
-                    <span class="rounded-md px-2 py-1 text-xs font-semibold" :class="statusBadgeClass(run.status)">
+                    <span class="rounded-md px-2 py-1 text-[11px] font-semibold" :class="statusBadgeClass(run.status)">
                         {{ run.status.toUpperCase() }}
                     </span>
                 </div>
-            </div>
-            <div class="rounded-lg border border-border bg-card p-4 shadow-sm">
-                <p class="text-xs uppercase text-muted-foreground">Tokens</p>
-                <div class="mt-2 text-sm text-foreground">
-                    <div>
-                        Total:
-                        {{
-                            run.total_tokens_in != null || run.total_tokens_out != null
-                                ? (run.total_tokens_in ?? 0) + (run.total_tokens_out ?? 0)
-                                : '—'
-                        }}
+                <div class="flex items-center gap-2">
+                    <Icon name="clock" class="h-4 w-4 text-muted-foreground" />
+                    <span class="font-medium text-foreground">{{ durationHuman(run.duration_ms) }}</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <Icon name="cpu" class="h-4 w-4 text-muted-foreground" />
+                    <span class="font-medium text-foreground">{{ tokenUsageLabel }}</span>
+                    <span class="text-xs text-muted-foreground">tokens</span>
+                </div>
+                <template v-if="formatCost(run.total_cost)">
+                    <div class="flex items-center gap-2">
+                        <Icon name="dollarSign" class="h-4 w-4 text-muted-foreground" />
+                        <span class="font-medium text-foreground">{{ formatCost(run.total_cost) }}</span>
                     </div>
-                    <div class="text-muted-foreground">
-                        Prompt: {{ run.total_tokens_in ?? '—' }} • Completion: {{ run.total_tokens_out ?? '—' }}
-                    </div>
+                </template>
+                <div class="flex items-center gap-2">
+                    <Icon name="calendar" class="h-4 w-4 text-muted-foreground" />
+                    <span class="font-medium text-foreground">{{ formatTimestamp(run.created_at) }}</span>
                 </div>
             </div>
-            <div class="rounded-lg border border-border bg-card p-4 shadow-sm">
-                <p class="text-xs uppercase text-muted-foreground">Timing</p>
-                <div class="mt-2 text-sm text-foreground">
-                    {{ durationHuman(run.duration_ms) }}
-                </div>
-            </div>
-        </div>
-
-        <div class="mt-4 grid gap-4 lg:grid-cols-[1.2fr_1fr]">
-            <div class="rounded-lg border border-border bg-card p-4 shadow-sm">
-                <div class="flex items-center justify-between">
-                    <h3 class="text-sm font-semibold text-foreground">Input</h3>
-                    <Button size="xs" variant="outline" @click="copyToClipboard(jsonPretty(run.input ?? {}))">Copy</Button>
-                </div>
-                <pre class="mt-3 max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-muted px-3 py-2 text-xs text-foreground">
-{{ jsonPretty(run.input) }}
-                </pre>
-            </div>
-
-            <div class="rounded-lg border border-border bg-card p-4 shadow-sm">
-                <h3 class="text-sm font-semibold text-foreground">Chain overview</h3>
-                <p class="mt-1 text-sm font-medium text-foreground">
-                    {{ run.chain?.name || 'N/A' }} • {{ sortedSteps.length }} steps
-                </p>
-                <div class="mt-2 space-y-1 text-sm text-muted-foreground">
-                    <div v-for="step in sortedSteps" :key="step.id" class="flex items-center gap-2">
-                        <span class="text-[11px] font-semibold text-muted-foreground">#{{ step.order_index }}</span>
-                        <span class="text-foreground">{{ step.chain_node?.name || 'Step' }}</span>
-                    </div>
-                </div>
-                <div
-                    v-if="run.dataset || run.test_case"
-                    class="mt-3 rounded-md border border-dashed border-border/70 p-3 text-xs text-muted-foreground"
+            <div class="ml-auto">
+                <Link
+                    :href="runsRoutes.index(project.uuid).url"
+                    class="rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground hover:text-foreground"
                 >
-                    Dataset: {{ run.dataset?.name || '—' }} • Test case: {{ run.test_case?.name || '—' }}
-                </div>
+                    Back to runs
+                </Link>
             </div>
         </div>
 
-        <div class="mt-6 space-y-4">
-            <div class="flex items-center justify-between">
-                <h3 class="text-lg font-semibold text-foreground">Steps</h3>
-                <p class="text-xs text-muted-foreground">Click a step to inspect details.</p>
-            </div>
+        <div class="mt-4 rounded-lg border border-border/60 bg-muted/10">
+            <div class="grid gap-0 lg:grid-cols-[2fr_3fr]">
+                <div class="border-b border-border/60 p-4 lg:border-b-0 lg:border-r lg:border-border/60">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-sm font-semibold text-foreground">Input</h3>
+                        <Button
+                            size="xs"
+                            variant="ghost"
+                            @click="copyToClipboard(jsonPretty(run.input ?? {}))"
+                        >
+                            <Icon name="copy" class="h-3.5 w-3.5 text-muted-foreground" />
+                        </Button>
+                    </div>
+                    <pre class="mt-3 max-h-96 overflow-auto whitespace-pre-wrap rounded-md bg-white px-3 py-2 text-xs font-mono text-foreground">
+{{ jsonPretty(run.input) }}
+                    </pre>
+                    <div
+                        v-if="run.dataset || run.test_case"
+                        class="mt-3 rounded-md border border-dashed border-border/70 p-3 text-xs text-muted-foreground"
+                    >
+                        Dataset: {{ run.dataset?.name || '—' }} • Test case: {{ run.test_case?.name || '—' }}
+                    </div>
+                </div>
 
-            <div
-                v-for="step in sortedSteps"
-                :key="step.id"
-                class="rounded-lg border border-border bg-card shadow-sm"
-            >
-                <Collapsible>
-                    <div class="flex items-center justify-between gap-3 px-4 py-3">
-                        <div class="flex flex-wrap items-center gap-3">
-                            <span class="text-xs font-semibold text-muted-foreground">#{{ step.order_index }}</span>
-                            <span class="font-semibold text-foreground">{{ step.chain_node?.name || 'Step' }}</span>
-                            <span class="text-xs text-muted-foreground">
-                                {{ step.chain_node?.provider_name || step.chain_node?.provider || 'Provider' }} /
-                                {{ step.chain_node?.model_name || 'model' }}
-                            </span>
-                            <span class="text-xs text-muted-foreground">Duration: {{ durationHuman(step.duration_ms) }}</span>
-                            <span class="text-xs text-muted-foreground">
-                                Tokens: {{ step.tokens_out ?? '—' }} completion
-                            </span>
+                <div class="p-4">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                            <h3 class="text-sm font-semibold text-foreground">Final result</h3>
+                            <p v-if="finalStep" class="text-xs text-muted-foreground">
+                                Step #{{ finalStep.order_index }} · {{ finalStep.chain_node?.name || 'Step' }} ·
+                                {{ finalStep.chain_node?.model_name || 'model' }}
+                            </p>
                         </div>
                         <div class="flex items-center gap-2">
-                            <span class="rounded-md px-2 py-1 text-[11px] font-semibold" :class="statusBadgeClass(step.status)">
-                                {{ step.status.toUpperCase() }}
-                            </span>
-                            <CollapsibleTrigger as-child>
-                                <Button variant="outline" size="sm">Toggle</Button>
-                            </CollapsibleTrigger>
+                            <Button
+                                size="xs"
+                                variant="outline"
+                                :disabled="!finalStep"
+                                @click="finalStep && copyToClipboard(finalContent(finalStep))"
+                            >
+                                Copy
+                            </Button>
+                            <Button size="xs" :disabled="!finalStep" @click="openFinalFeedback">Improve</Button>
                         </div>
                     </div>
+                    <div class="mt-3 max-h-96 overflow-auto rounded-md bg-white px-4 py-3 text-sm leading-relaxed text-foreground">
+                        <pre class="whitespace-pre-wrap font-sans">
+{{ finalStep ? finalContent(finalStep) : 'No result yet.' }}
+                        </pre>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-                    <CollapsibleContent>
-                        <div class="space-y-3 border-t border-border px-4 py-3">
-                            <div class="rounded-md border border-border/70 bg-background p-3">
-                                <div class="flex items-center justify-between">
-                                    <h4 class="text-sm font-semibold text-foreground">Final response</h4>
-                                    <Button size="xs" variant="outline" @click="copyToClipboard(finalContent(step))">Copy</Button>
-                                </div>
-                                <pre class="mt-2 whitespace-pre-wrap rounded-md bg-card px-3 py-2 text-sm text-foreground">
-{{ finalContent(step) }}
-                                </pre>
+        <div class="mt-6 border-t border-border/60 pt-4">
+            <div class="flex items-center justify-between">
+                <h3 class="text-lg font-semibold text-foreground">Trace</h3>
+                <p class="text-xs text-muted-foreground">Select a step to inspect details.</p>
+            </div>
+
+            <div class="mt-4 grid gap-0 lg:grid-cols-[3fr_7fr]">
+                <div class="border-r border-border/60">
+                    <div class="divide-y divide-border/60">
+                        <button
+                            v-for="step in sortedSteps"
+                            :key="step.id"
+                            type="button"
+                            @click="selectedStepId = step.id"
+                            :class="[
+                                'flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm transition',
+                                selectedStepId === step.id
+                                    ? 'border-l-2 border-primary bg-blue-50'
+                                    : 'border-l-2 border-transparent hover:bg-muted/40',
+                            ]"
+                        >
+                            <div class="flex items-center gap-3">
+                                <span class="text-xs font-semibold text-muted-foreground">#{{ step.order_index }}</span>
+                                <span class="text-sm font-semibold text-foreground">
+                                    {{ step.chain_node?.model_name || 'model' }}
+                                </span>
                             </div>
+                            <span
+                                class="h-2.5 w-2.5 rounded-full"
+                                :class="step.status === 'failed' ? 'bg-red-500' : step.status === 'running' ? 'bg-amber-500' : 'bg-emerald-500'"
+                            ></span>
+                        </button>
+                    </div>
+                </div>
 
-                            <div class="grid gap-3 md:grid-cols-2">
-                                <div class="rounded-md border border-border/70 bg-background p-3">
-                                    <h4 class="text-sm font-semibold text-foreground">System prompt</h4>
-                                    <pre class="mt-2 whitespace-pre-wrap text-xs text-foreground">
-{{ extractMessages(step).system || '—' }}
-                                    </pre>
+                <div class="px-6 py-4">
+                    <div v-if="selectedStep" class="space-y-4 text-sm">
+                        <div class="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                                <div class="text-xs text-muted-foreground">Step #{{ selectedStep.order_index }}</div>
+                                <div class="text-sm font-semibold text-foreground">
+                                    {{ selectedStep.chain_node?.name || 'Step' }}
                                 </div>
-                                <div class="rounded-md border border-border/70 bg-background p-3">
-                                    <h4 class="text-sm font-semibold text-foreground">User prompt</h4>
-                                    <pre class="mt-2 whitespace-pre-wrap text-xs text-foreground">
-{{ extractMessages(step).user || '—' }}
-                                    </pre>
-                                </div>
-                            </div>
-
-                            <div v-if="step.parsed_output" class="rounded-md border border-border/70 bg-background p-3">
-                                <div class="flex items-center justify-between">
-                                    <h4 class="text-sm font-semibold text-foreground">Parsed output</h4>
-                                    <Button size="xs" variant="outline" @click="copyToClipboard(jsonPretty(step.parsed_output))">
-                                        Copy
-                                    </Button>
-                                </div>
-                                <pre class="mt-2 whitespace-pre-wrap text-xs text-foreground">
-{{ jsonPretty(step.parsed_output) }}
-                                </pre>
-                            </div>
-
-                            <div v-if="step.validation_errors && step.validation_errors.length" class="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-700">
-                                <div class="font-semibold">Validation errors</div>
-                                <ul class="list-disc pl-4">
-                                    <li v-for="err in step.validation_errors" :key="err">{{ err }}</li>
-                                </ul>
-                            </div>
-
-                            <div v-if="step.feedback && step.feedback.length" class="space-y-2">
-                                <div class="text-sm font-semibold text-foreground">Feedback</div>
-                                <div
-                                    v-for="fb in step.feedback"
-                                    :key="fb.id"
-                                    class="rounded-md border border-border/70 bg-background p-3 text-sm"
-                                >
-                                    <div class="flex flex-wrap items-center justify-between gap-2">
-                                        <div class="font-semibold text-foreground">
-                                            {{ fb.type === 'llm_suggestion' ? 'LLM suggestion' : 'User feedback' }}
-                                        </div>
-                                        <div class="text-xs text-muted-foreground">Rating: {{ fb.rating ?? '—' }}</div>
-                                    </div>
-                                    <p class="mt-1 text-muted-foreground text-sm">
-                                        {{ fb.comment || 'No comment' }}
-                                    </p>
-                                    <div v-if="fb.analysis" class="mt-2 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                                        <div class="font-semibold">Analysis</div>
-                                        <p class="mt-1 whitespace-pre-wrap">{{ fb.analysis }}</p>
-                                    </div>
-                                    <Collapsible v-if="fb.suggested_prompt_content">
-                                        <CollapsibleTrigger as-child>
-                                            <Button size="xs" variant="ghost" class="mt-2 px-0 text-xs">View suggestion</Button>
-                                        </CollapsibleTrigger>
-                                        <CollapsibleContent>
-                                            <div class="mt-2 space-y-3 rounded-md border border-border bg-card p-3">
-                                                <div class="flex items-center justify-between">
-                                                    <div class="text-sm font-semibold text-foreground">Prompt comparison</div>
-                                                    <div class="text-[11px] text-muted-foreground">Current vs suggested</div>
-                                                </div>
-                                                <div class="grid gap-3 lg:grid-cols-[1fr_1.1fr_1fr]">
-                                                    <div class="rounded-md border border-border/70 bg-muted/40">
-                                                        <div class="flex items-center justify-between border-b border-border/60 px-3 py-2">
-                                                            <div class="text-xs font-semibold text-foreground">Current prompt</div>
-                                                            <Button
-                                                                size="xs"
-                                                                variant="ghost"
-                                                                class="px-2 text-[11px]"
-                                                                @click="copyToClipboard(step.target_prompt_content || '')"
-                                                            >
-                                                                Copy
-                                                            </Button>
-                                                        </div>
-                                                        <pre class="max-h-64 overflow-auto whitespace-pre-wrap px-3 py-2 text-[11px] leading-relaxed text-foreground">
-{{ step.target_prompt_content || '—' }}
-                                                        </pre>
-                                                    </div>
-
-                                                    <div class="rounded-md border border-border/70 bg-muted/20">
-                                                        <div class="flex items-center justify-between border-b border-border/60 px-3 py-2">
-                                                            <div class="text-xs font-semibold text-foreground">Diff</div>
-                                                            <div class="text-[11px] text-muted-foreground">- / +</div>
-                                                        </div>
-                                                        <div class="max-h-64 overflow-auto text-[11px] font-mono leading-relaxed">
-                                                            <div
-                                                                v-for="(line, idx) in feedbackDiffs.get(fb.id) || []"
-                                                                :key="idx"
-                                                                class="flex gap-2 border-b border-border/50 px-3 py-1 last:border-0"
-                                                                :class="diffLineClass(line.type)"
-                                                            >
-                                                                <span class="w-10 shrink-0 text-right text-[10px] text-muted-foreground">
-                                                                    {{ line.oldLine ?? '' }}
-                                                                </span>
-                                                                <span class="w-10 shrink-0 text-right text-[10px] text-muted-foreground">
-                                                                    {{ line.newLine ?? '' }}
-                                                                </span>
-                                                                <span class="w-4 shrink-0 text-center font-semibold">
-                                                                    {{ diffLineSymbol(line.type) }}
-                                                                </span>
-                                                                <span class="whitespace-pre-wrap text-foreground/90">
-                                                                    {{ line.text || ' ' }}
-                                                                </span>
-                                                            </div>
-                                                            <div
-                                                                v-if="!(feedbackDiffs.get(fb.id) || []).length"
-                                                                class="px-3 py-2 text-muted-foreground"
-                                                            >
-                                                                No differences detected.
-                                                            </div>
-                                                        </div>
-                                                        <div class="border-t border-border/60 px-3 py-2 text-[11px] text-muted-foreground">
-                                                            Green = added, red = removed.
-                                                        </div>
-                                                    </div>
-
-                                                    <div class="rounded-md border border-border/70 bg-muted/40">
-                                                        <div class="flex items-center justify-between border-b border-border/60 px-3 py-2">
-                                                            <div class="text-xs font-semibold text-foreground">Suggested prompt</div>
-                                                            <Button
-                                                                size="xs"
-                                                                variant="ghost"
-                                                                class="px-2 text-[11px]"
-                                                                @click="copyToClipboard(fb.suggested_prompt_content || '')"
-                                                            >
-                                                                Copy
-                                                            </Button>
-                                                        </div>
-                                                        <pre class="max-h-64 overflow-auto whitespace-pre-wrap px-3 py-2 text-[11px] leading-relaxed text-foreground">
-{{ fb.suggested_prompt_content || '—' }}
-                                                        </pre>
-                                                    </div>
-                                                </div>
-                                                <div class="flex items-center justify-end">
-                                                    <Button
-                                                        size="xs"
-                                                        class="mt-1"
-                                                        :disabled="!step.target_prompt_template_id"
-                                                        @click="createVersionFromSuggestion(step, fb.id)"
-                                                    >
-                                                        Create new version
-                                                    </Button>
-                                                </div>
-                                            </div>
-                                        </CollapsibleContent>
-                                    </Collapsible>
+                                <div class="text-xs text-muted-foreground">
+                                    {{ selectedStep.chain_node?.model_name || 'model' }} ·
+                                    {{ selectedStep.chain_node?.provider_name || selectedStep.chain_node?.provider || 'Provider' }}
                                 </div>
                             </div>
-
-                            <div class="flex flex-wrap gap-2">
-                                <Button size="xs" variant="outline" @click="openFeedback(step.id)">Feedback / Improve</Button>
-                            </div>
-
-                            <Collapsible>
-                                <CollapsibleTrigger as-child>
-                                    <Button variant="ghost" size="sm" class="px-0 text-sm text-muted-foreground">
-                                        Technical details
-                                    </Button>
-                                </CollapsibleTrigger>
-                                <CollapsibleContent>
-                                    <div class="mt-2 space-y-2 rounded-md border border-border/70 bg-muted/40 p-3 text-xs text-foreground">
-                                        <div>
-                                            <div class="font-semibold text-foreground">Request payload</div>
-                                            <pre class="mt-1 whitespace-pre-wrap">
-{{ jsonPretty(step.request_payload) }}
-                                            </pre>
-                                        </div>
-                                        <div>
-                                            <div class="font-semibold text-foreground">Response raw</div>
-                                            <pre class="mt-1 whitespace-pre-wrap">
-{{ jsonPretty(step.response_raw) }}
-                                            </pre>
-                                        </div>
-                                        <div>
-                                            <div class="font-semibold text-foreground">Parsed output</div>
-                                            <pre class="mt-1 whitespace-pre-wrap">
-{{ jsonPretty(step.parsed_output) }}
-                                            </pre>
-                                        </div>
-                                        <div class="text-xs text-muted-foreground">
-                                            Tokens in: {{ step.tokens_in ?? '—' }} • out: {{ step.tokens_out ?? '—' }}
-                                        </div>
-                                    </div>
-                                </CollapsibleContent>
-                            </Collapsible>
+                            <span class="rounded-md px-2 py-1 text-[11px] font-semibold" :class="statusBadgeClass(selectedStep.status)">
+                                {{ selectedStep.status.toUpperCase() }}
+                            </span>
                         </div>
-                    </CollapsibleContent>
-                </Collapsible>
+
+                        <div class="space-y-3">
+                            <h4 class="text-xs font-semibold uppercase text-muted-foreground">Prompt details</h4>
+                            <div class="rounded-md bg-muted/40 p-3 font-mono text-xs text-foreground">
+                                <div class="flex items-center justify-between text-[11px] text-muted-foreground">
+                                    <span>System</span>
+                                    <Button size="xs" variant="ghost" @click="copyToClipboard(extractMessages(selectedStep).system || '')">
+                                        <Icon name="copy" class="h-3.5 w-3.5 text-muted-foreground" />
+                                    </Button>
+                                </div>
+                                <pre class="mt-2 whitespace-pre-wrap">
+{{ extractMessages(selectedStep).system || '—' }}
+                                </pre>
+                            </div>
+                            <div class="rounded-md bg-muted/40 p-3 font-mono text-xs text-foreground">
+                                <div class="flex items-center justify-between text-[11px] text-muted-foreground">
+                                    <span>User</span>
+                                    <Button size="xs" variant="ghost" @click="copyToClipboard(extractMessages(selectedStep).user || '')">
+                                        <Icon name="copy" class="h-3.5 w-3.5 text-muted-foreground" />
+                                    </Button>
+                                </div>
+                                <pre class="mt-2 whitespace-pre-wrap">
+{{ extractMessages(selectedStep).user || '—' }}
+                                </pre>
+                            </div>
+                        </div>
+
+                        <div class="space-y-3">
+                            <h4 class="text-xs font-semibold uppercase text-muted-foreground">Raw response</h4>
+                            <div class="rounded-md bg-muted/40 p-3 font-mono text-xs text-foreground">
+                                <div class="flex items-center justify-between text-[11px] text-muted-foreground">
+                                    <span>Response JSON</span>
+                                    <Button size="xs" variant="ghost" @click="copyToClipboard(jsonPretty(selectedStep.response_raw))">
+                                        <Icon name="copy" class="h-3.5 w-3.5 text-muted-foreground" />
+                                    </Button>
+                                </div>
+                                <pre class="mt-2 whitespace-pre-wrap">
+{{ jsonPretty(selectedStep.response_raw) }}
+                                </pre>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-else class="flex h-full items-center justify-center text-sm text-muted-foreground">
+                        Select a step to inspect details.
+                    </div>
+                </div>
             </div>
         </div>
 

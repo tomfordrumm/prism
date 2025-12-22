@@ -7,6 +7,8 @@ import { createApp, h } from 'vue';
 import { initializeTheme } from './composables/useAppearance';
 import PrimeVue from 'primevue/config';
 import Aura from '@primeuix/themes/aura';
+import VueCodemirror from 'vue-codemirror';
+import ToastService from 'primevue/toastservice';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
@@ -20,6 +22,10 @@ createInertiaApp({
     setup({ el, App, props, plugin }) {
         createApp({ render: () => h(App, props) })
             .use(plugin)
+            .use(VueCodemirror, {
+                extensions: [],
+            })
+            .use(ToastService)
             .use(PrimeVue, {
                 theme: {
                     preset: Aura

@@ -21,9 +21,11 @@ Route::get('/', function () {
     ]);
 })->name('home');
 
-Route::get('dashboard', function () {
-    return Inertia::render('Dashboard');
-})->middleware(['auth', 'verified'])->name('dashboard');
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/project', fn () => Inertia::render('ProjectEntry'))->name('project.entry');
+    Route::get('dashboard', fn () => redirect()->route('project.entry'))->name('dashboard');
+    Route::get('/playground/prompt-editor', fn () => Inertia::render('playground/PromptEditorDemo'))->name('playground.prompt-editor');
+});
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/projects', [ProjectController::class, 'index'])->name('projects.index');

@@ -40,6 +40,10 @@ class TargetPromptResolver
             return null;
         }
 
+        if ($runStep->prompt_version_id) {
+            return (int) $runStep->prompt_version_id;
+        }
+
         /** @var ChainNode|null $chainNode */
         $chainNode = $runStep->chainNode;
 
@@ -52,6 +56,13 @@ class TargetPromptResolver
      */
     public function collectTargetVersionIds(Collection $steps): array
     {
+        $directVersionIds = $steps
+            ->pluck('prompt_version_id')
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
         $templateIds = $steps
             ->flatMap(function ($step) {
                 $messagesConfig = $step->chainNode ? (array) ($step->chainNode->messages_config ?? []) : [];
@@ -67,7 +78,8 @@ class TargetPromptResolver
             $this->preloadLatestVersions($templateIds);
         }
 
-        return $steps
+        return collect($directVersionIds)
+            ->merge($steps
             ->map(function ($step) {
                 $messagesConfig = $step->chainNode ? (array) ($step->chainNode->messages_config ?? []) : [];
 
@@ -75,7 +87,7 @@ class TargetPromptResolver
             })
             ->filter()
             ->unique()
-            ->values()
+            ->values())
             ->all();
     }
 

@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 
 interface ProjectPayload {
     id: number;
+    uuid: string;
     name: string;
     description?: string | null;
 }
@@ -31,7 +32,7 @@ const submit = () => {
             name: data.name,
             description: data.description || null,
         }))
-        .post(datasetRoutes.store({ project: props.project.id }).url);
+        .post(datasetRoutes.store({ project: props.project.uuid }).url);
 };
 </script>
 
@@ -72,7 +73,7 @@ const submit = () => {
 
             <div class="flex items-center gap-3">
                 <Button type="submit" :disabled="form.processing">Create dataset</Button>
-                <Button variant="outline" :href="datasetRoutes.index({ project: project.id }).url" as="a">Cancel</Button>
+                <Button variant="outline" :href="datasetRoutes.index({ project: project.uuid }).url" as="a">Cancel</Button>
             </div>
         </form>
     </ProjectLayout>

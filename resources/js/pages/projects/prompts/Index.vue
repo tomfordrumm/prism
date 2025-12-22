@@ -6,6 +6,7 @@ import { router, useForm } from '@inertiajs/vue3';
 import { computed, ref, watch } from 'vue';
 
 import InputError from '@/components/InputError.vue';
+import PromptEditor from '@/components/PromptEditor.vue';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -15,12 +16,18 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@/components/ui/dialog';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 
 interface ProjectPayload {
     id: number;
+    uuid: string;
     name: string;
     description?: string | null;
 }
@@ -30,6 +37,16 @@ interface TemplateListItem {
     name: string;
     description?: string | null;
     latest_version?: number | null;
+}
+
+interface DraftTemplate {
+    id: string;
+    name: string;
+    description?: string | null;
+    latest_version?: number | null;
+    variables: TemplateVariable[];
+    content: string;
+    isDraft: true;
 }
 
 interface TemplateVariable {
@@ -65,46 +82,82 @@ interface Props {
 
 const props = defineProps<Props>();
 
-const selectedTemplateId = ref<number | null>(props.selectedTemplate?.id ?? props.templates[0]?.id ?? null);
+const selectedTemplateId = ref<number | string | null>(
+    props.selectedTemplate?.id ?? props.templates[0]?.id ?? null,
+);
 const selectedVersion = ref<VersionPayload | null>(props.selectedVersion ?? props.versions[0] ?? null);
 const editorContent = ref(selectedVersion.value?.content ?? '');
+const editorMode = ref<'plain' | 'markdown' | 'xml'>('plain');
+const editorPreset = ref<'minimal' | 'ide'>('minimal');
+const draftCounter = ref(props.templates.length + 1);
+const drafts = ref<DraftTemplate[]>([]);
 const changelog = ref('');
 const showVersions = ref(false);
 const showVariables = ref(false);
-const showCreateModal = ref(false);
 const showRunModal = ref(false);
 const search = ref('');
+const showSaveMenu = ref(false);
+
+const allTemplates = computed<(TemplateListItem | DraftTemplate)[]>(() => [
+    ...drafts.value,
+    ...props.templates,
+]);
 
 const filteredTemplates = computed(() => {
-    if (!search.value.trim()) return props.templates;
+    if (!search.value.trim()) return allTemplates.value;
     const term = search.value.toLowerCase();
-    return props.templates.filter(
+    return allTemplates.value.filter(
         (tpl) =>
             tpl.name.toLowerCase().includes(term) ||
             (tpl.description ?? '').toLowerCase().includes(term)
     );
 });
 
-const selectedTemplate = computed(() =>
-    props.selectedTemplate && props.selectedTemplate.id === selectedTemplateId.value
-        ? props.selectedTemplate
-        : null
+const activeDraft = computed(
+    () => drafts.value.find((draft) => draft.id === selectedTemplateId.value) ?? null,
 );
+
+const selectedTemplate = computed(() => {
+    if (activeDraft.value) {
+        return activeDraft.value;
+    }
+
+    return props.selectedTemplate && props.selectedTemplate.id === selectedTemplateId.value
+        ? props.selectedTemplate
+        : null;
+});
+
+const isDraftSelected = computed(() => Boolean(activeDraft.value));
 
 const templateVersions = computed(() =>
-    selectedTemplate.value ? props.versions : []
+    selectedTemplate.value && !isDraftSelected.value ? props.versions : [],
 );
 
-const hasChanges = computed(
-    () => !!selectedVersion.value && editorContent.value !== (selectedVersion.value.content ?? '')
-);
+const hasChanges = computed(() => {
+    if (isDraftSelected.value) {
+        return editorContent.value.trim().length > 0;
+    }
 
-const selectTemplate = (templateId: number) => {
+    return !!selectedVersion.value && editorContent.value !== (selectedVersion.value.content ?? '');
+});
+
+const saveLabel = computed(() => (isDraftSelected.value ? 'Create prompt' : 'Save version'));
+const saveActionLabel = computed(() => (isDraftSelected.value ? 'Create prompt' : 'Create version'));
+
+const selectTemplate = (templateId: number | string) => {
     if (templateId === selectedTemplateId.value) return;
+
+    if (typeof templateId === 'string') {
+        const draft = drafts.value.find((item) => item.id === templateId) ?? null;
+        selectedTemplateId.value = templateId;
+        selectedVersion.value = null;
+        editorContent.value = draft?.content ?? '';
+        return;
+    }
 
     router.get(
         prompts.index(
-            { project: props.project.id },
+            { project: props.project.uuid },
             { preserveScroll: true, replace: true, query: { prompt_id: templateId } }
         ).url,
         {},
@@ -118,18 +171,42 @@ const selectTemplate = (templateId: number) => {
     );
 };
 
+const createDraft = () => {
+    const draftName = `Prompt #${draftCounter.value}`;
+    draftCounter.value += 1;
+
+    const draft: DraftTemplate = {
+        id: `draft-${Date.now()}-${draftCounter.value}`,
+        name: draftName,
+        description: null,
+        latest_version: null,
+        variables: [],
+        content: '',
+        isDraft: true,
+    };
+
+    drafts.value = [draft, ...drafts.value];
+    selectedTemplateId.value = draft.id;
+    selectedVersion.value = null;
+    editorContent.value = '';
+    runForm.variables = defaultVariables.value;
+    showSaveMenu.value = false;
+    showVariables.value = false;
+    showVersions.value = false;
+};
+
 const loadVersion = (version: VersionPayload) => {
     selectedVersion.value = version;
     editorContent.value = version.content ?? '';
     changelog.value = '';
 
-    if (selectedTemplateId.value) {
+    if (typeof selectedTemplateId.value === 'number') {
         history.replaceState(
             {},
             '',
             prompts
                 .index(
-                    { project: props.project.id },
+                    { project: props.project.uuid },
                     { query: { prompt_id: selectedTemplateId.value, version: version.version } }
                 )
                 .url
@@ -171,16 +248,16 @@ const handleProviderChange = () => {
 };
 
 const openRunModal = () => {
-    if (!selectedTemplate.value) return;
+    if (!selectedTemplate.value || isDraftSelected.value) return;
     handleProviderChange();
     showRunModal.value = true;
 };
 
 const submitRun = () => {
-    if (!selectedTemplate.value) return;
+    if (!selectedTemplate.value || isDraftSelected.value) return;
 
     runForm.post(
-        `/projects/${props.project.id}/prompts/${selectedTemplate.value.id}/run`,
+        `/projects/${props.project.uuid}/prompts/${selectedTemplate.value.id}/run`,
         {
             preserveScroll: true,
             onSuccess: () => {
@@ -193,6 +270,7 @@ const submitRun = () => {
 const canRunPrompt = computed(
     () =>
         Boolean(selectedTemplate.value) &&
+        !isDraftSelected.value &&
         Boolean(runForm.provider_credential_id) &&
         Boolean(runForm.model_name) &&
         props.providerCredentials.length > 0
@@ -201,6 +279,24 @@ const canRunPrompt = computed(
 const submitVersion = () => {
     if (!selectedTemplate.value) return;
 
+    if (isDraftSelected.value) {
+        versionForm
+            .transform(() => ({
+                name: selectedTemplate.value?.name ?? `Prompt #${draftCounter.value}`,
+                description: null,
+                initial_content: editorContent.value,
+                initial_changelog: changelog.value || 'Initial version',
+            }))
+            .post(prompts.store({ project: props.project.uuid }).url, {
+                preserveScroll: true,
+                onSuccess: () => {
+                    changelog.value = '';
+                    showSaveMenu.value = false;
+                },
+            });
+        return;
+    }
+
     versionForm
         .transform(() => ({
             content: editorContent.value,
@@ -208,45 +304,26 @@ const submitVersion = () => {
         }))
         .post(
             promptVersions.store({
-                project: props.project.id,
+                project: props.project.uuid,
                 promptTemplate: selectedTemplate.value.id,
             }).url,
             {
                 preserveScroll: true,
                 onSuccess: () => {
                     changelog.value = '';
+                    showSaveMenu.value = false;
                 },
             }
         );
 };
 
-const createForm = useForm({
-    name: '',
-    description: '',
-    initial_content: '',
-    initial_changelog: 'Initial version',
-});
-
-const submitCreate = () => {
-    createForm
-        .transform((data) => ({
-            name: data.name,
-            description: data.description || null,
-            initial_content: data.initial_content,
-            initial_changelog: data.initial_changelog || 'Initial version',
-        }))
-        .post(prompts.store({ project: props.project.id }).url, {
-            preserveScroll: true,
-            onSuccess: () => {
-                showCreateModal.value = false;
-                createForm.reset();
-            },
-        });
-};
-
 watch(
     () => props.selectedTemplate,
     (template) => {
+        if (isDraftSelected.value) {
+            return;
+        }
+
         if (template?.id) {
             selectedTemplateId.value = template.id;
             selectedVersion.value = props.selectedVersion ?? props.versions[0] ?? null;
@@ -259,9 +336,21 @@ watch(
 watch(
     () => props.selectedVersion,
     (version) => {
+        if (isDraftSelected.value) {
+            return;
+        }
+
         selectedVersion.value = version ?? props.versions[0] ?? null;
         editorContent.value = version?.content ?? props.versions[0]?.content ?? '';
         changelog.value = '';
+    }
+);
+
+watch(
+    () => editorContent.value,
+    (value) => {
+        if (!activeDraft.value) return;
+        activeDraft.value.content = value;
     }
 );
 
@@ -274,36 +363,31 @@ watch(
 
 <template>
     <ProjectLayout :project="project" title-suffix="Prompts">
-        <div class="grid gap-4 lg:grid-cols-[320px_1fr] lg:gap-6">
-            <div class="flex h-full flex-col rounded-lg border border-border bg-card">
-                <div class="flex items-center justify-between border-b border-border/80 px-4 py-3">
-                    <div>
-                        <h2 class="text-sm font-semibold text-foreground">Prompt templates</h2>
-                        <p class="text-xs text-muted-foreground">Project-wide prompt building blocks.</p>
+        <div class="grid min-h-[calc(100vh-8rem)] gap-0 overflow-hidden lg:h-[calc(100vh-8rem)] lg:grid-cols-[320px_1fr]">
+            <div class="flex h-full flex-col border-r border-border/70 bg-white">
+                <div class="border-b border-border/60 px-4 py-4">
+                    <div class="flex items-center gap-2">
+                        <Input
+                            v-model="search"
+                            type="search"
+                            placeholder="Search prompts..."
+                            class="w-full text-sm"
+                        />
+                        <Button size="sm" variant="outline" @click="createDraft">New</Button>
                     </div>
-                    <Button size="sm" variant="outline" @click="showCreateModal = true">New</Button>
                 </div>
 
-                <div class="p-3">
-                    <Input
-                        v-model="search"
-                        type="search"
-                        placeholder="Search prompts..."
-                        class="w-full text-sm"
-                    />
-                </div>
-
-                <div class="flex-1 space-y-2 overflow-y-auto px-3 pb-3">
+                <div class="flex-1 space-y-1 overflow-y-auto">
                     <button
                         v-for="template in filteredTemplates"
                         :key="template.id"
                         type="button"
                         @click="selectTemplate(template.id)"
                         :class="[
-                            'w-full rounded-lg border px-3 py-2 text-left transition',
+                            'w-full border-l-2 px-4 py-3 text-left transition',
                             selectedTemplateId === template.id
-                                ? 'border-primary bg-primary/10'
-                                : 'border-border/70 hover:border-primary/70',
+                                ? 'border-primary bg-white'
+                                : 'border-l-transparent hover:bg-white/70',
                         ]"
                     >
                         <div class="flex items-center justify-between">
@@ -319,89 +403,115 @@ watch(
 
                     <div
                         v-if="filteredTemplates.length === 0"
-                        class="rounded-md border border-dashed border-border/70 px-3 py-4 text-center text-sm text-muted-foreground"
+                        class="px-4 py-4 text-center text-sm text-muted-foreground"
                     >
                         No templates found.
                     </div>
                 </div>
             </div>
 
-            <div class="rounded-lg border border-border bg-card p-4 lg:p-6">
+            <div class="flex h-full flex-col bg-white">
                 <div v-if="!selectedTemplate" class="flex h-full flex-col items-center justify-center gap-3 text-center">
                     <p class="text-sm text-muted-foreground">No template selected.</p>
-                    <Button size="sm" @click="showCreateModal = true">Create template</Button>
+                    <Button size="sm" @click="createDraft">Create template</Button>
                 </div>
-                <div v-else class="flex flex-col gap-4">
-                    <div class="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                            <h2 class="text-xl font-semibold text-foreground">{{ selectedTemplate.name }}</h2>
-                            <p class="text-sm text-muted-foreground">
-                                {{ selectedTemplate.description || 'Prompt template' }}
-                            </p>
-                            <p v-if="selectedVersion" class="mt-1 text-xs text-muted-foreground">
-                                Showing v{{ selectedVersion.version }} •
-                                {{ selectedVersion.changelog || 'Initial version' }} •
-                                {{ selectedVersion.created_at }}
-                            </p>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <Button
-                                size="sm"
-                                :disabled="!canRunPrompt"
-                                @click="openRunModal"
-                            >
-                                <Spinner v-if="runForm.processing" class="mr-2" /> Run prompt
-                            </Button>
-                            <Button variant="outline" size="sm" @click="showVariables = true">Variables</Button>
-                            <Button variant="outline" size="sm" @click="showVersions = true">Versions</Button>
-                        </div>
-                    </div>
-
-                    <div class="rounded-lg border border-border bg-background p-4 shadow-sm">
-                        <div class="flex items-center justify-between">
-                            <span class="text-sm font-medium text-foreground">Prompt content</span>
-                            <span v-if="selectedVersion" class="text-xs text-muted-foreground">
-                                v{{ selectedVersion.version }}
-                            </span>
-                        </div>
-                        <textarea
-                            v-model="editorContent"
-                            rows="16"
-                            class="mt-3 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                            placeholder="Write your prompt here..."
-                        ></textarea>
-                    </div>
-
-                    <div
-                        v-if="hasChanges"
-                        class="flex flex-col gap-3 rounded-lg border border-primary/40 bg-primary/5 p-4 shadow-sm"
-                    >
-                        <div class="flex items-center justify-between gap-3">
-                            <div>
-                                <p class="text-sm font-semibold text-foreground">Unsaved changes</p>
-                                <p class="text-xs text-muted-foreground">
-                                    Provide a short changelog and create a new version.
-                                </p>
+                <div v-else class="flex h-full flex-col">
+                    <div class="sticky top-0 z-10 border-b border-border/60 bg-white px-6 py-4">
+                        <div class="flex flex-wrap items-center justify-between gap-3">
+                            <div class="flex flex-wrap items-center gap-3">
+                                <h2 class="text-lg font-semibold text-foreground">{{ selectedTemplate.name }}</h2>
+                                <span v-if="selectedVersion" class="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                                    v{{ selectedVersion.version }}
+                                </span>
+                                <span
+                                    v-if="hasChanges"
+                                    class="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700"
+                                >
+                                    Modified
+                                </span>
+                                <span class="text-xs text-muted-foreground">
+                                    Last saved: {{ selectedVersion?.created_at || 'Not saved yet' }}
+                                </span>
                             </div>
-                            <Button variant="ghost" size="sm" @click="loadVersion(selectedVersion!)">Discard</Button>
+                            <div class="flex items-center gap-2">
+                                <DropdownMenu v-if="hasChanges" v-model:open="showSaveMenu">
+                                    <DropdownMenuTrigger as-child>
+                                        <Button size="sm">{{ saveLabel }}</Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end" class="w-72 p-3">
+                                        <div class="grid gap-2">
+                                            <Label for="changelog">Changelog (optional)</Label>
+                                            <Input
+                                                id="changelog"
+                                                v-model="changelog"
+                                                name="changelog"
+                                                placeholder="What changed?"
+                                            />
+                                            <InputError
+                                                :message="versionForm.errors.changelog || versionForm.errors.initial_changelog"
+                                            />
+                                        </div>
+                                        <InputError
+                                            :message="versionForm.errors.content || versionForm.errors.initial_content"
+                                            class="mt-2"
+                                        />
+                                        <div class="mt-3 flex items-center justify-end gap-2">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                @click="showSaveMenu = false"
+                                            >
+                                                Cancel
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                :disabled="versionForm.processing"
+                                                @click="submitVersion"
+                                            >
+                                                {{ saveActionLabel }}
+                                            </Button>
+                                        </div>
+                                    </DropdownMenuContent>
+                                </DropdownMenu>
+                                <Button
+                                    size="sm"
+                                    :disabled="!canRunPrompt"
+                                    :variant="hasChanges ? 'outline' : 'default'"
+                                    @click="openRunModal"
+                                >
+                                    <Spinner v-if="runForm.processing" class="mr-2" /> Run prompt
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    :disabled="isDraftSelected"
+                                    @click="showVariables = true"
+                                >
+                                    Variables
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    :disabled="isDraftSelected"
+                                    @click="showVersions = true"
+                                >
+                                    Versions
+                                </Button>
+                            </div>
                         </div>
-                        <div class="grid gap-2">
-                            <Label for="changelog">Changelog (optional)</Label>
-                            <Input
-                                id="changelog"
-                                v-model="changelog"
-                                name="changelog"
-                                placeholder="What changed?"
-                            />
-                            <InputError :message="versionForm.errors.changelog" />
-                        </div>
-                        <div class="flex items-center gap-3">
-                            <Button type="button" :disabled="versionForm.processing" @click="submitVersion">
-                                Create new version
-                            </Button>
-                        </div>
-                        <InputError :message="versionForm.errors.content" />
                     </div>
+
+                    <div class="flex-1 overflow-hidden">
+                        <PromptEditor
+                            v-model="editorContent"
+                            v-model:mode="editorMode"
+                            v-model:preset="editorPreset"
+                            placeholder="Write your prompt here..."
+                            show-controls
+                            height="100%"
+                        />
+                    </div>
+
                 </div>
             </div>
         </div>
@@ -537,63 +647,5 @@ watch(
             </DialogContent>
         </Dialog>
 
-        <Dialog :open="showCreateModal" @update:open="showCreateModal = $event">
-            <DialogContent class="sm:max-w-lg">
-                <DialogHeader>
-                    <DialogTitle>New prompt template</DialogTitle>
-                    <DialogDescription>Create a reusable prompt for this project.</DialogDescription>
-                </DialogHeader>
-                <div class="space-y-3">
-                    <div class="grid gap-2">
-                        <Label for="name">Name</Label>
-                        <Input id="name" v-model="createForm.name" name="name" placeholder="quiz_expand_topic_system" />
-                        <InputError :message="createForm.errors.name" />
-                    </div>
-                    <div class="grid gap-2">
-                        <Label for="description">Description</Label>
-                        <textarea
-                            id="description"
-                            v-model="createForm.description"
-                            name="description"
-                            rows="2"
-                            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                            placeholder="Purpose of this template"
-                        ></textarea>
-                        <InputError :message="createForm.errors.description" />
-                    </div>
-                    <div class="grid gap-2">
-                        <Label for="initial_content">Initial content</Label>
-                        <textarea
-                            id="initial_content"
-                            v-model="createForm.initial_content"
-                            name="initial_content"
-                            rows="6"
-                            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                            placeholder="Enter first prompt content"
-                        ></textarea>
-                        <InputError :message="createForm.errors.initial_content" />
-                        <p class="text-xs text-muted-foreground">
-                            Variables are extracted automatically from <code v-pre>{{ '{{ variable }}' }}</code> placeholders after saving.
-                        </p>
-                    </div>
-                    <div class="grid gap-2">
-                        <Label for="initial_changelog">Initial changelog</Label>
-                        <textarea
-                            id="initial_changelog"
-                            v-model="createForm.initial_changelog"
-                            name="initial_changelog"
-                            rows="2"
-                            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                            placeholder="Initial version"
-                        ></textarea>
-                        <InputError :message="createForm.errors.initial_changelog" />
-                    </div>
-                </div>
-                <DialogFooter class="mt-4 flex items-center justify-end gap-2">
-                    <Button variant="outline" size="sm" @click="showCreateModal = false">Cancel</Button>
-                    <Button :disabled="createForm.processing" @click="submitCreate">Create template</Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
     </ProjectLayout>
 </template>

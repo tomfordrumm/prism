@@ -2,20 +2,13 @@
 
 namespace App\Actions\Prompts;
 
-use App\Models\Chain;
-use App\Models\ChainNode;
 use App\Models\Project;
 use App\Models\PromptTemplate;
 use App\Models\ProviderCredential;
 use App\Models\Run;
-use App\Services\Runs\ChainSnapshotLoader;
 
 class RunPromptTemplateAction
 {
-    public function __construct(private ChainSnapshotLoader $snapshotLoader)
-    {
-    }
-
     public function run(
         Project $project,
         PromptTemplate $template,
@@ -25,20 +18,9 @@ class RunPromptTemplateAction
     ): Run {
         $latestVersion = $template->promptVersions()->orderByDesc('version')->firstOrFail();
 
-        $chain = Chain::create([
-            'tenant_id' => currentTenantId(),
-            'project_id' => $project->id,
-            'name' => 'Prompt: '.$template->name,
-            'description' => 'Quick prompt run',
-            'is_active' => false,
-            'is_quick_prompt' => true,
-        ]);
-
-        $node = ChainNode::create([
-            'tenant_id' => currentTenantId(),
-            'chain_id' => $chain->id,
+        $snapshot = [[
+            'id' => null,
             'name' => $template->name,
-            'order_index' => 1,
             'provider_credential_id' => $credential->id,
             'model_name' => $modelName,
             'model_params' => null,
@@ -46,20 +28,19 @@ class RunPromptTemplateAction
                 [
                     'role' => 'user',
                     'mode' => 'template',
+                    'prompt_template_id' => $template->id,
                     'prompt_version_id' => $latestVersion->id,
                 ],
             ],
             'output_schema' => null,
             'stop_on_validation_error' => false,
-        ]);
-
-        $chain->setRelation('nodes', collect([$node]));
-        $snapshot = $this->snapshotLoader->createSnapshot($chain);
+            'order_index' => 1,
+        ]];
 
         return Run::create([
             'tenant_id' => currentTenantId(),
             'project_id' => $project->id,
-            'chain_id' => $chain->id,
+            'chain_id' => null,
             'chain_snapshot' => $snapshot,
             'input' => $variables,
             'status' => 'pending',

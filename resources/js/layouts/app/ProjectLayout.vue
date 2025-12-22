@@ -1,13 +1,25 @@
 <script setup lang="ts">
 import AppLayout from '@/layouts/AppLayout.vue';
-import { index as projectIndex, show as projectShow } from '@/routes/projects';
-import { cn } from '@/lib/utils';
+import { show as projectShow } from '@/routes/projects';
+import {
+    index as projectPromptsIndex,
+} from '@/routes/projects/prompts';
+import {
+    index as projectChainsIndex,
+} from '@/routes/projects/chains';
+import {
+    index as projectDatasetsIndex,
+} from '@/routes/projects/datasets';
+import {
+    index as projectRunsIndex,
+} from '@/routes/projects/runs';
 import type { BreadcrumbItem } from '@/types';
-import { Head, Link, usePage } from '@inertiajs/vue3';
+import { Head, usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 
 interface ProjectPayload {
     id: number;
+    uuid: string;
     name: string;
     description?: string | null;
 }
@@ -20,57 +32,62 @@ interface Props {
 const props = defineProps<Props>();
 const page = usePage();
 
-const breadcrumbs: BreadcrumbItem[] = [
-    {
-        title: 'Projects',
-        href: projectIndex().url,
-    },
-    {
-        title: props.project.name,
-        href: projectShow({ project: props.project.id }).url,
-    },
-];
+const sectionBreadcrumb = computed<BreadcrumbItem | null>(() => {
+    const url = page.url.replace(/\/+$/, '');
+    const projectKey = props.project.uuid;
 
-const tabs = computed(() => [
-    {
-        title: 'Overview',
-        href: projectShow({ project: props.project.id }),
-    },
-    {
-        title: 'Prompts',
-        href: `/projects/${props.project.id}/prompts`,
-    },
-    {
-        title: 'Chains',
-        href: `/projects/${props.project.id}/chains`,
-    },
-    {
-        title: 'Datasets',
-        href: `/projects/${props.project.id}/datasets`,
-    },
-    {
-        title: 'Runs',
-        href: `/projects/${props.project.id}/runs`,
-    },
-]);
+    if (url.includes(`/projects/${projectKey}/prompts`)) {
+        return {
+            title: 'Prompts',
+            href: projectPromptsIndex({ project: projectKey }).url,
+        };
+    }
+
+    if (url.includes(`/projects/${projectKey}/chains`)) {
+        return {
+            title: 'Chains',
+            href: projectChainsIndex({ project: projectKey }).url,
+        };
+    }
+
+    if (url.includes(`/projects/${projectKey}/datasets`)) {
+        return {
+            title: 'Datasets',
+            href: projectDatasetsIndex({ project: projectKey }).url,
+        };
+    }
+
+    if (url.includes(`/projects/${projectKey}/runs`)) {
+        return {
+            title: 'Runs',
+            href: projectRunsIndex({ project: projectKey }).url,
+        };
+    }
+
+    return {
+        title: 'Dashboard',
+        href: projectShow({ project: projectKey }).url,
+    };
+});
+
+const breadcrumbs = computed<BreadcrumbItem[]>(() => {
+    const items: BreadcrumbItem[] = [
+        {
+            title: props.project.name,
+            href: projectShow({ project: props.project.uuid }).url,
+        },
+    ];
+
+    if (sectionBreadcrumb.value) {
+        items.push(sectionBreadcrumb.value);
+    }
+
+    return items;
+});
 
 const pageTitle = computed(() =>
     props.titleSuffix ? `${props.project.name} • ${props.titleSuffix}` : props.project.name,
 );
-
-const normalize = (href: string | { url: string }) =>
-    typeof href === 'string' ? href.replace(/\/+$/, '') : href.url.replace(/\/+$/, '');
-
-const isActive = (href: string | { url: string }) => {
-    const current = normalize(page.url);
-    const target = normalize(href);
-
-    if (target === normalize(projectShow({ project: props.project.id }).url)) {
-        return current === target;
-    }
-
-    return current === target || current.startsWith(`${target}/`);
-};
 </script>
 
 <template>
@@ -78,25 +95,6 @@ const isActive = (href: string | { url: string }) => {
 
     <AppLayout :breadcrumbs="breadcrumbs">
         <div class="flex flex-col gap-4 p-4">
-
-            <div class="flex flex-wrap gap-2">
-                <Link
-                    v-for="tab in tabs"
-                    :key="tab.title"
-                    :href="typeof tab.href === 'string' ? tab.href : tab.href.url"
-                    :class="
-                        cn(
-                            'rounded-md px-3 py-2 text-sm font-medium transition',
-                            isActive(typeof tab.href === 'string' ? tab.href : tab.href.url)
-                                ? 'bg-primary text-primary-foreground'
-                                : 'text-muted-foreground hover:text-foreground hover:bg-muted',
-                        )
-                    "
-                >
-                    {{ tab.title }}
-                </Link>
-            </div>
-
             <slot />
         </div>
     </AppLayout>

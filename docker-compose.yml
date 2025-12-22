@@ -30,7 +30,7 @@ services:
     build:
       context: .
       dockerfile: .docker/Dockerfile
-    command: ["/bin/sh", "-c", "php artisan queue:listen --tries=1"]
+    command: ["/bin/sh", "-c", "php artisan queue:work --sleep=3 --tries=1 --timeout=120 --backoff=0"]
     entrypoint: ["/bin/sh", "/var/www/.docker/entrypoint.sh"]
     volumes:
       - ./:/var/www
@@ -47,6 +47,7 @@ services:
       - QUEUE_CONNECTION=redis
       - CACHE_STORE=redis
       - REDIS_HOST=redis
+      - REDIS_QUEUE_RETRY_AFTER=150
 
   vite:
     build:

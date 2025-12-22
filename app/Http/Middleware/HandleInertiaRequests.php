@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Project;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -47,6 +48,8 @@ class HandleInertiaRequests extends Middleware
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
             'tenancy' => $this->tenancyPayload($request),
+            'projects' => $this->projectsPayload($request),
+            'currentProjectUuid' => $this->currentProjectUuid($request),
         ];
     }
 
@@ -73,5 +76,37 @@ class HandleInertiaRequests extends Middleware
             'tenantsCount' => $tenantsCount,
             'needsTenant' => $tenantsCount === 0,
         ];
+    }
+
+    private function projectsPayload(Request $request): array
+    {
+        if (! $request->user() || ! currentTenantId()) {
+            return [];
+        }
+
+        return Project::query()
+            ->orderBy('name')
+            ->get(['id', 'uuid', 'name'])
+            ->map(fn (Project $project) => [
+                'id' => $project->id,
+                'uuid' => $project->uuid,
+                'name' => $project->name,
+            ])
+            ->all();
+    }
+
+    private function currentProjectUuid(Request $request): ?string
+    {
+        $routeProject = $request->route('project');
+
+        if ($routeProject instanceof Project) {
+            return $routeProject->uuid;
+        }
+
+        if (is_string($routeProject) && ! is_numeric($routeProject)) {
+            return $routeProject;
+        }
+
+        return null;
     }
 }

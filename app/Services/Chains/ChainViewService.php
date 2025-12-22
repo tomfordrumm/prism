@@ -48,7 +48,7 @@ class ChainViewService
         $promptVersions = $this->promptVersionsById($promptVersionIds);
 
         return [
-            'project' => $project->only(['id', 'name', 'description']),
+            'project' => $project->only(['id', 'uuid', 'name', 'description']),
             'chain' => [
                 'id' => $chain->id,
                 'name' => $chain->name,
@@ -202,6 +202,7 @@ class ChainViewService
                             'id' => $version->id,
                             'version' => $version->version,
                             'created_at' => $version->created_at,
+                            'content' => $version->content,
                         ];
                     })->values(),
                 ];

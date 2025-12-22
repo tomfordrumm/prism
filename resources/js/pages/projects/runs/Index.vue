@@ -5,6 +5,7 @@ import { Link } from '@inertiajs/vue3';
 
 interface ProjectPayload {
     id: number;
+    uuid: string;
     name: string;
     description?: string | null;
 }
@@ -13,6 +14,7 @@ interface RunListItem {
     id: number;
     status: string;
     chain: { id: number; name: string } | null;
+    chain_label?: string | null;
     dataset?: { id: number; name: string } | null;
     test_case?: { id: number; name: string } | null;
     total_tokens_in?: number | null;
@@ -37,7 +39,7 @@ const formatStatus = (status: string) => status.toUpperCase();
             <div>
                 <h2 class="text-xl font-semibold text-foreground">Runs</h2>
                 <p class="text-sm text-muted-foreground">
-                    Executions of chains within this project.
+                    Executions of chains and prompts within this project.
                 </p>
             </div>
         </div>
@@ -46,7 +48,7 @@ const formatStatus = (status: string) => status.toUpperCase();
             v-if="runs.length === 0"
             class="mt-4 rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground"
         >
-            No runs yet. Trigger a chain to see results here.
+            No runs yet. Trigger a chain or run a prompt to see results here.
         </div>
 
         <div v-else class="mt-4 overflow-hidden rounded-lg border border-border">
@@ -66,12 +68,12 @@ const formatStatus = (status: string) => status.toUpperCase();
                 <tbody class="divide-y divide-border bg-card">
                     <tr v-for="run in runs" :key="run.id" class="hover:bg-muted/60">
                         <td class="px-4 py-2 font-mono">
-                            <Link :href="runsRoutes.show({ project: project.id, run: run.id }).url" class="text-primary">
+                            <Link :href="runsRoutes.show({ project: project.uuid, run: run.id }).url" class="text-primary">
                                 #{{ run.id }}
                             </Link>
                         </td>
                         <td class="px-4 py-2">
-                            {{ run.chain?.name || 'N/A' }}
+                            {{ run.chain_label || run.chain?.name || 'Prompt run' }}
                         </td>
                         <td class="px-4 py-2 text-sm text-muted-foreground">
                             {{ run.dataset?.name || '—' }}

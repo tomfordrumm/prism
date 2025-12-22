@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 
 interface ProjectPayload {
     id: number;
+    uuid: string;
     name: string;
     description?: string | null;
 }
@@ -36,7 +37,7 @@ defineProps<Props>();
                 </p>
             </div>
             <Button as-child>
-                <Link :href="datasetRoutes.create({ project: project.id }).url">New dataset</Link>
+                <Link :href="datasetRoutes.create({ project: project.uuid }).url">New dataset</Link>
             </Button>
         </div>
 
@@ -59,7 +60,7 @@ defineProps<Props>();
                 <tbody class="divide-y divide-border bg-card">
                     <tr v-for="dataset in datasets" :key="dataset.id" class="hover:bg-muted/60">
                         <td class="px-4 py-2 font-semibold text-foreground">
-                            <Link :href="datasetRoutes.show({ project: project.id, dataset: dataset.id }).url" class="text-primary">
+                            <Link :href="datasetRoutes.show({ project: project.uuid, dataset: dataset.id }).url" class="text-primary">
                                 {{ dataset.name }}
                             </Link>
                         </td>

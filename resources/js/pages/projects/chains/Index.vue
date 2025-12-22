@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 
 interface ProjectPayload {
     id: number;
+    uuid: string;
     name: string;
     description?: string | null;
 }
@@ -36,7 +37,7 @@ defineProps<Props>();
                 </p>
             </div>
             <Button as-child>
-                <Link :href="chainRoutes.create(project.id).url">New chain</Link>
+                <Link :href="chainRoutes.create(project.uuid).url">New chain</Link>
             </Button>
         </div>
 
@@ -51,7 +52,7 @@ defineProps<Props>();
             <Link
                 v-for="chain in chains"
                 :key="chain.id"
-                :href="chainRoutes.show({ project: project.id, chain: chain.id }).url"
+                :href="chainRoutes.show({ project: project.uuid, chain: chain.id }).url"
                 class="block rounded-lg border border-border bg-card p-4 transition hover:border-primary"
             >
                 <div class="flex items-center justify-between gap-2">

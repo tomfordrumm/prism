@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 
 interface ProjectPayload {
     id: number;
+    uuid: string;
     name: string;
     description?: string | null;
 }
@@ -66,7 +67,7 @@ const updateDataset = () => {
             name: data.name,
             description: data.description || null,
         }))
-        .put(datasetRoutes.update({ project: props.project.id, dataset: props.dataset.id }).url);
+        .put(datasetRoutes.update({ project: props.project.uuid, dataset: props.dataset.id }).url);
 };
 
 const createTestCase = () => {
@@ -80,7 +81,7 @@ const createTestCase = () => {
             }))
             .post(
                 testCasesRoutes.store({
-                    project: props.project.id,
+                    project: props.project.uuid,
                     dataset: props.dataset.id,
                 }).url,
                 {
@@ -110,7 +111,7 @@ const updateTestCase = (testCase: TestCasePayload) => {
             }))
             .put(
                 testCasesRoutes.update({
-                    project: props.project.id,
+                    project: props.project.uuid,
                     dataset: props.dataset.id,
                     testCase: testCase.id,
                 }).url,
@@ -124,7 +125,7 @@ const updateTestCase = (testCase: TestCasePayload) => {
 const deleteTestCase = (testCase: TestCasePayload) => {
     router.delete(
         testCasesRoutes.destroy({
-            project: props.project.id,
+            project: props.project.uuid,
             dataset: props.dataset.id,
             testCase: testCase.id,
         }).url,

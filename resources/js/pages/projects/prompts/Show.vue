@@ -19,6 +19,7 @@ import { Spinner } from '@/components/ui/spinner';
 
 interface ProjectPayload {
     id: number;
+    uuid: string;
     name: string;
     description?: string | null;
 }
@@ -127,7 +128,7 @@ watch(
 
 const submitRun = () => {
     runForm.post(
-        `/projects/${props.project.id}/prompts/${props.template.id}/run`,
+        `/projects/${props.project.uuid}/prompts/${props.template.id}/run`,
         {
             preserveScroll: true,
             onSuccess: () => {
@@ -153,7 +154,7 @@ const loadVersion = (version: VersionPayload) => {
         '',
         prompts
             .show({
-                project: props.project.id,
+                project: props.project.uuid,
                 promptTemplate: props.template.id,
                 query: { version: version.version },
             })
@@ -167,7 +168,7 @@ const submit = () => {
         changelog: changelog.value || null,
     })).post(
         prompts.versions.store({
-            project: props.project.id,
+            project: props.project.uuid,
             promptTemplate: props.template.id,
         }).url,
         {

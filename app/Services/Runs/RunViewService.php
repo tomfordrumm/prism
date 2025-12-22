@@ -40,6 +40,8 @@ class RunViewService
             $dataset = $run->dataset;
             /** @var TestCase|null $testCase */
             $testCase = $run->testCase;
+            $snapshot = is_array($run->chain_snapshot) ? $run->chain_snapshot : [];
+            $snapshotName = is_array($snapshot) && isset($snapshot[0]['name']) ? $snapshot[0]['name'] : null;
 
             return [
                 'id' => $run->id,
@@ -48,6 +50,7 @@ class RunViewService
                     'id' => $chain->id,
                     'name' => $chain->name,
                 ] : null,
+                'chain_label' => $chain?->name ?? $snapshotName ?? 'Prompt run',
                 'dataset' => $dataset ? [
                     'id' => $dataset->id,
                     'name' => $dataset->name,
@@ -64,7 +67,7 @@ class RunViewService
         });
 
         return [
-            'project' => $project->only(['id', 'name', 'description']),
+            'project' => $project->only(['id', 'uuid', 'name', 'description']),
             'runs' => $runs,
         ];
     }
@@ -87,7 +90,9 @@ class RunViewService
             'chain:id,name',
             'dataset:id,name',
             'testCase:id,name',
-            'steps' => fn ($query) => $query->with(['chainNode.providerCredential', 'feedback'])->orderBy('order_index'),
+            'steps' => fn ($query) => $query
+                ->with(['chainNode.providerCredential', 'providerCredential', 'feedback'])
+                ->orderBy('order_index'),
         ]);
 
         /** @var \Illuminate\Database\Eloquent\Collection<int, RunStep> $stepsCollection */
@@ -106,9 +111,11 @@ class RunViewService
         $dataset = $run->dataset;
         /** @var TestCase|null $testCase */
         $testCase = $run->testCase;
+        $snapshot = is_array($run->chain_snapshot) ? $run->chain_snapshot : [];
+        $snapshotName = is_array($snapshot) && isset($snapshot[0]['name']) ? $snapshot[0]['name'] : null;
 
         return [
-            'project' => $project->only(['id', 'name', 'description']),
+            'project' => $project->only(['id', 'uuid', 'name', 'description']),
             'run' => [
                 'id' => $run->id,
                 'status' => $run->status,
@@ -116,6 +123,7 @@ class RunViewService
                     'id' => $chain->id,
                     'name' => $chain->name,
                 ] : null,
+                'chain_label' => $chain?->name ?? $snapshotName ?? 'Prompt run',
                 'dataset' => $dataset ? [
                     'id' => $dataset->id,
                     'name' => $dataset->name,
@@ -128,6 +136,7 @@ class RunViewService
                 'chain_snapshot' => $run->chain_snapshot,
                 'total_tokens_in' => $run->total_tokens_in,
                 'total_tokens_out' => $run->total_tokens_out,
+                'total_cost' => $run->total_cost,
                 'duration_ms' => $run->duration_ms,
                 'created_at' => $run->created_at,
                 'finished_at' => $run->finished_at,

@@ -6,6 +6,7 @@ use App\Models\Concerns\BelongsToTenant;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 class Project extends Model
 {
@@ -16,7 +17,23 @@ class Project extends Model
 
     protected function casts(): array
     {
-        return [];
+        return [
+            'uuid' => 'string',
+        ];
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(function (Project $project): void {
+            if (! $project->uuid) {
+                $project->uuid = (string) Str::uuid();
+            }
+        });
+    }
+
+    public function getRouteKeyName(): string
+    {
+        return 'uuid';
     }
 
     public function promptTemplates(): HasMany

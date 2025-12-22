@@ -5,6 +5,12 @@ export interface Auth {
     user: User;
 }
 
+export interface ProjectSummary {
+    id: number;
+    uuid: string;
+    name: string;
+}
+
 export interface TenancyProps {
     currentTenant: { id: number; name: string } | null;
     tenantsCount: number;
@@ -32,6 +38,8 @@ export type AppPageProps<
     auth: Auth;
     sidebarOpen: boolean;
     tenancy: TenancyProps;
+    projects: ProjectSummary[];
+    currentProjectUuid?: string | null;
 };
 
 export interface User {

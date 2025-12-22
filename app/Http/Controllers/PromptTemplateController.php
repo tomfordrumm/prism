@@ -76,7 +76,7 @@ class PromptTemplateController extends Controller
         }
 
         return Inertia::render('projects/prompts/Index', [
-            'project' => $project->only(['id', 'name', 'description']),
+            'project' => $project->only(['id', 'uuid', 'name', 'description']),
             'templates' => $templateList,
             'selectedTemplate' => $selectedTemplate ? [
                 'id' => $selectedTemplate->id,
@@ -110,7 +110,7 @@ class PromptTemplateController extends Controller
     public function create(Project $project): Response
     {
         return Inertia::render('projects/prompts/Create', [
-            'project' => $project->only(['id', 'name', 'description']),
+            'project' => $project->only(['id', 'uuid', 'name', 'description']),
         ]);
     }
 
@@ -155,7 +155,7 @@ class PromptTemplateController extends Controller
         $providerCredentials = $this->providerCredentials();
 
         return Inertia::render('projects/prompts/Show', [
-            'project' => $project->only(['id', 'name', 'description']),
+            'project' => $project->only(['id', 'uuid', 'name', 'description']),
             'template' => [
                 'id' => $promptTemplate->id,
                 'name' => $promptTemplate->name,

@@ -32,7 +32,7 @@ class DatasetController extends Controller
             ]);
 
         return Inertia::render('projects/datasets/Index', [
-            'project' => $project->only(['id', 'name', 'description']),
+            'project' => $project->only(['id', 'uuid', 'name', 'description']),
             'datasets' => $datasets,
         ]);
     }
@@ -42,7 +42,7 @@ class DatasetController extends Controller
         $this->assertProjectTenant($project);
 
         return Inertia::render('projects/datasets/Create', [
-            'project' => $project->only(['id', 'name', 'description']),
+            'project' => $project->only(['id', 'uuid', 'name', 'description']),
         ]);
     }
 
@@ -70,7 +70,7 @@ class DatasetController extends Controller
         $testCases = $dataset->testCases;
 
         return Inertia::render('projects/datasets/Show', [
-            'project' => $project->only(['id', 'name', 'description']),
+            'project' => $project->only(['id', 'uuid', 'name', 'description']),
             'dataset' => [
                 'id' => $dataset->id,
                 'name' => $dataset->name,

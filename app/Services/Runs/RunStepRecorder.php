@@ -18,7 +18,9 @@ class RunStepRecorder
         ?array $parsedOutput,
         array $validationErrors,
         string $status,
-        int $durationMs
+        int $durationMs,
+        ?int $promptVersionId = null,
+        ?int $providerCredentialId = null
     ): void {
         $usage = $responseDto ? $responseDto->usage : [];
 
@@ -26,6 +28,8 @@ class RunStepRecorder
             'tenant_id' => currentTenantId(),
             'run_id' => $run->id,
             'chain_node_id' => $node->id,
+            'provider_credential_id' => $providerCredentialId,
+            'prompt_version_id' => $promptVersionId,
             'order_index' => $node->order_index,
             'request_payload' => [
                 'model' => $node->model_name,

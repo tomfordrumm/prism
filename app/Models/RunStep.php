@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToTenant;
+use App\Models\ProviderCredential;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -33,6 +34,11 @@ class RunStep extends Model
     public function chainNode(): BelongsTo
     {
         return $this->belongsTo(ChainNode::class);
+    }
+
+    public function providerCredential(): BelongsTo
+    {
+        return $this->belongsTo(ProviderCredential::class);
     }
 
     public function feedback(): HasMany

@@ -170,3 +170,10 @@
         @apply bg-background text-foreground;
     }
 }
+
+.cm-prompt-var {
+    background: hsl(46 100% 88%);
+    border-radius: 0.35rem;
+    color: hsl(28 45% 25%);
+    padding: 0.05rem 0.2rem;
+}

@@ -14,7 +14,7 @@ class ProjectController extends Controller
     {
         $projects = Project::query()
             ->latest()
-            ->get(['id', 'name', 'description']);
+            ->get(['id', 'uuid', 'name', 'description']);
 
         return Inertia::render('projects/Index', [
             'projects' => $projects,
@@ -39,8 +39,18 @@ class ProjectController extends Controller
 
     public function show(Project $project): Response
     {
+        $project->loadCount(['promptTemplates', 'chains', 'runs']);
+
         return Inertia::render('projects/Show', [
-            'project' => $project->only(['id', 'name', 'description']),
+            'project' => $project->only([
+                'id',
+                'uuid',
+                'name',
+                'description',
+                'prompt_templates_count',
+                'chains_count',
+                'runs_count',
+            ]),
         ]);
     }
 }

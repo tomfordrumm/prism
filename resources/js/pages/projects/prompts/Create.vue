@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 
 interface ProjectPayload {
     id: number;
+    uuid: string;
     name: string;
     description?: string | null;
 }
@@ -33,7 +34,7 @@ const submit = () => {
         description: data.description || null,
         initial_content: data.initial_content,
         initial_changelog: data.initial_changelog || 'Initial version',
-    })).post(prompts.store({ project: props.project.id }).url);
+    })).post(prompts.store({ project: props.project.uuid }).url);
 };
 </script>
 
@@ -105,7 +106,7 @@ const submit = () => {
 
             <div class="flex items-center gap-3">
                 <Button type="submit" :disabled="form.processing">Create template</Button>
-                <Button variant="outline" :href="prompts.index({ project: project.id }).url" as="a">Cancel</Button>
+                <Button variant="outline" :href="prompts.index({ project: project.uuid }).url" as="a">Cancel</Button>
             </div>
         </form>
     </ProjectLayout>

@@ -36,7 +36,7 @@ class ChainController extends Controller
             ]);
 
         return Inertia::render('projects/chains/Index', [
-            'project' => $project->only(['id', 'name', 'description']),
+            'project' => $project->only(['id', 'uuid', 'name', 'description']),
             'chains' => $chains,
         ]);
     }
@@ -46,7 +46,7 @@ class ChainController extends Controller
         $this->assertProjectTenant($project);
 
         return Inertia::render('projects/chains/Create', [
-            'project' => $project->only(['id', 'name', 'description']),
+            'project' => $project->only(['id', 'uuid', 'name', 'description']),
         ]);
     }
 

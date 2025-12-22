@@ -23,9 +23,11 @@ class RunStepPresenter
         /** @var ChainNode|null $chainNode */
         $chainNode = $step->chainNode;
         /** @var ProviderCredential|null $providerCredential */
-        $providerCredential = $chainNode?->providerCredential;
+        $providerCredential = $chainNode?->providerCredential ?? $step->providerCredential;
 
-        $targetPromptVersionId = $this->targetPromptResolver->fromMessagesConfig($chainNode ? $chainNode->messages_config ?? [] : []);
+        $targetPromptVersionId = $step->prompt_version_id
+            ? (int) $step->prompt_version_id
+            : $this->targetPromptResolver->fromMessagesConfig($chainNode ? $chainNode->messages_config ?? [] : []);
         $targetTemplateId = null;
         $targetPromptContent = null;
         if ($targetPromptVersionId) {
@@ -34,17 +36,32 @@ class RunStepPresenter
             $targetPromptContent = $version?->content;
         }
 
-        return [
-            'id' => $step->id,
-            'order_index' => $step->order_index,
-            'status' => $step->status,
-            'chain_node' => $chainNode ? [
+        $modelName = $chainNode?->model_name ?? ($step->request_payload['model'] ?? null);
+        $chainNodePayload = null;
+
+        if ($chainNode) {
+            $chainNodePayload = [
                 'id' => $chainNode->id,
                 'name' => $chainNode->name,
                 'provider' => $providerCredential?->provider,
                 'provider_name' => $providerCredential?->name,
                 'model_name' => $chainNode->model_name,
-            ] : null,
+            ];
+        } elseif ($providerCredential || $modelName) {
+            $chainNodePayload = [
+                'id' => null,
+                'name' => 'Prompt',
+                'provider' => $providerCredential?->provider,
+                'provider_name' => $providerCredential?->name,
+                'model_name' => $modelName,
+            ];
+        }
+
+        return [
+            'id' => $step->id,
+            'order_index' => $step->order_index,
+            'status' => $step->status,
+            'chain_node' => $chainNodePayload,
             'target_prompt_version_id' => $targetPromptVersionId,
             'target_prompt_template_id' => $targetTemplateId,
             'target_prompt_content' => $targetPromptContent,

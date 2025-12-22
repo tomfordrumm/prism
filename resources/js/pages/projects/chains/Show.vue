@@ -7,10 +7,13 @@ import { computed, nextTick, ref, watch } from 'vue';
 
 import Icon from '@/components/Icon.vue';
 import InputError from '@/components/InputError.vue';
-import Card from 'primevue/card';
+import PromptEditor from '@/components/PromptEditor.vue';
+import Select from 'primevue/select';
 import SelectButton from 'primevue/selectbutton';
 import Timeline from 'primevue/timeline';
+import Toast from 'primevue/toast';
 import Tree from 'primevue/tree';
+import { useToast } from 'primevue/usetoast';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -32,6 +35,7 @@ import {
 
 interface ProjectPayload {
     id: number;
+    uuid: string;
     name: string;
     description?: string | null;
 }
@@ -94,6 +98,18 @@ interface ModelOption {
     display_name: string;
 }
 
+interface ModelSelectOption {
+    label: string;
+    value: string;
+    credentialId: number;
+    modelId: string;
+}
+
+interface ModelSelectGroup {
+    label: string;
+    items: ModelSelectOption[];
+}
+
 interface ContextStepSample {
     key: string;
     name: string;
@@ -125,6 +141,7 @@ interface PromptTemplateVersion {
     id: number;
     version: number;
     created_at: string | null;
+    content: string;
 }
 
 interface PromptTemplateOption {
@@ -154,6 +171,11 @@ const templateOptions = computed(() =>
         label: template.name,
     })),
 );
+
+const userTemplateOptions = computed(() => [
+    { value: null, label: 'No user prompt' },
+    ...templateOptions.value,
+]);
 
 const versionLookup = computed(() => {
     const map = new Map<number, { templateId: number; templateName: string; version: number; created_at: string | null }>();
@@ -185,6 +207,13 @@ const chainNameBeforeEdit = ref(props.chain.name);
 const nodeNameEditing = ref(false);
 const nodeNameInputRef = ref<HTMLInputElement | null>(null);
 const showAdvancedModelSettings = ref(false);
+const showAvailableData = ref(false);
+const mappingStudioOpen = ref(false);
+const systemEditorMode = ref<'plain' | 'markdown' | 'xml'>('plain');
+const systemEditorPreset = ref<'minimal' | 'ide'>('minimal');
+const userEditorMode = ref<'plain' | 'markdown' | 'xml'>('plain');
+const userEditorPreset = ref<'minimal' | 'ide'>('minimal');
+const toast = useToast();
 
 const updateChain = () => {
     chainForm
@@ -192,7 +221,7 @@ const updateChain = () => {
             name: data.name,
             description: data.description || null,
         }))
-        .put(chainRoutes.update({ project: props.project.id, chain: props.chain.id }).url, {
+        .put(chainRoutes.update({ project: props.project.uuid, chain: props.chain.id }).url, {
             preserveScroll: true,
         });
 };
@@ -344,9 +373,6 @@ interface TreeNode {
     children?: TreeNode[];
 }
 
-interface FlatTreeNode extends TreeNode {
-    level: number;
-}
 
 const buildTree = (value: unknown, basePath: string): TreeNode[] => {
     if (value === null || value === undefined) return [];
@@ -424,16 +450,6 @@ const insertPlaceholder = (path: string) => {
     navigator.clipboard.writeText(placeholder).catch(() => {});
 };
 
-const flattenTree = (nodes: TreeNode[], level = 0): FlatTreeNode[] =>
-    nodes.flatMap((node) => [
-        { ...node, level },
-        ...flattenTree(node.children ?? [], level + 1),
-    ]);
-
-const inputTreeFlat = computed(() => flattenTree(inputTree.value));
-const stepsTreeFlat = computed(() =>
-    stepsTree.value.flatMap((root) => flattenTree([root], 0)),
-);
 
 interface PrimeTreeNode {
     key: string;
@@ -469,11 +485,102 @@ const availableDataTree = computed<PrimeTreeNode[]>(() => {
     ];
 });
 
+const filterTreeNodes = (nodes: PrimeTreeNode[], term: string): PrimeTreeNode[] => {
+    if (!term.trim()) return nodes;
+    const lowered = term.toLowerCase();
+
+    return nodes
+        .map((node) => {
+            const labelMatch = node.label.toLowerCase().includes(lowered);
+            const pathMatch = node.data?.path?.toLowerCase().includes(lowered);
+            const children = node.children ? filterTreeNodes(node.children, term) : [];
+
+            if (labelMatch || pathMatch || children.length) {
+                return {
+                    ...node,
+                    children: children.length ? children : undefined,
+                };
+            }
+
+            return null;
+        })
+        .filter((node): node is PrimeTreeNode => Boolean(node));
+};
+
+const filteredAvailableDataTree = computed(() =>
+    filterTreeNodes(availableDataTree.value, availableDataSearch.value),
+);
+
+const filteredStudioDataTree = computed(() =>
+    filterTreeNodes(availableDataTree.value, mappingStudioSearch.value),
+);
+
 const onTreeSelect = (event: { node: PrimeTreeNode }) => {
     const path = event.node?.data?.path;
     if (path) {
         insertPlaceholder(path);
     }
+};
+
+const onStudioTreeSelect = (event: { node: PrimeTreeNode }) => {
+    const path = event.node?.data?.path;
+    if (!path || !mappingTarget.value) return;
+
+    applyMappingText(mappingTarget.value.role, mappingTarget.value.name, path);
+    const key = `${mappingTarget.value.role}:${mappingTarget.value.name}`;
+    mappingFlashKey.value = key;
+    window.setTimeout(() => {
+        if (mappingFlashKey.value === key) {
+            mappingFlashKey.value = null;
+        }
+    }, 450);
+};
+
+const handleTreeDragStart = (event: DragEvent, path?: string) => {
+    if (!path || !event.dataTransfer) return;
+    event.dataTransfer.setData('text/plain', path);
+    event.dataTransfer.setData('text', path);
+    event.dataTransfer.effectAllowed = 'copy';
+
+    const ghost = document.createElement('div');
+    ghost.textContent = path;
+    ghost.style.fontSize = '12px';
+    ghost.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
+    ghost.style.padding = '4px 8px';
+    ghost.style.background = 'rgba(15, 23, 42, 0.85)';
+    ghost.style.color = 'white';
+    ghost.style.borderRadius = '6px';
+    ghost.style.position = 'absolute';
+    ghost.style.top = '-9999px';
+    ghost.style.left = '-9999px';
+    document.body.appendChild(ghost);
+    event.dataTransfer.setDragImage(ghost, 0, 0);
+    window.setTimeout(() => ghost.remove(), 0);
+};
+
+const handleMappingDrop = (
+    event: DragEvent,
+    role: 'system' | 'user',
+    name: string,
+) => {
+    event.preventDefault();
+    const path = event.dataTransfer?.getData('text/plain') ?? '';
+    if (!path) return;
+
+    mappingTarget.value = { role, name };
+    applyMappingText(role, name, path);
+    const key = `${role}:${name}`;
+    mappingFlashKey.value = key;
+    window.setTimeout(() => {
+        if (mappingFlashKey.value === key) {
+            mappingFlashKey.value = null;
+        }
+    }, 450);
+};
+
+const copyPath = (path?: string) => {
+    if (!path) return;
+    navigator.clipboard.writeText(path).catch(() => {});
 };
 
 const timelineItems = computed(() => {
@@ -527,7 +634,26 @@ const extractInlineVariables = (content: string) => {
     return names;
 };
 
-const selectedVariable = ref<{ role: 'system' | 'user'; name: string } | null>(null);
+const mappingTarget = ref<{ role: 'system' | 'user'; name: string } | null>(null);
+const availableDataSearch = ref('');
+const mappingStudioSearch = ref('');
+const mappingFlashKey = ref<string | null>(null);
+
+const toMappingText = (mapping: VariableMapping): string => {
+    if (mapping.source === 'input') {
+        return mapping.path ? `input.${mapping.path}` : 'input';
+    }
+
+    if (mapping.source === 'previous_step' && mapping.step_key) {
+        return mapping.path ? `steps.${mapping.step_key}.${mapping.path}` : `steps.${mapping.step_key}`;
+    }
+
+    if (mapping.source === 'constant' && mapping.value) {
+        return mapping.value;
+    }
+
+    return '';
+};
 
 const mappingRows = (role: 'system' | 'user') => {
     const templateId =
@@ -541,6 +667,7 @@ const mappingRows = (role: 'system' | 'user') => {
     return variables.map((name) => ({
         name,
         mapping: mappings[name] ?? {},
+        mappingText: toMappingText(mappings[name] ?? {}),
     }));
 };
 
@@ -556,43 +683,130 @@ const updateMapping = (
     target[name] = { ...(target[name] ?? {}), ...value };
 };
 
-const onTreeLeafClick = (node: FlatTreeNode) => {
-    const selection = selectedVariable.value;
-    if (!selection) {
-        insertPlaceholder(node.path);
+const clearMapping = (role: 'system' | 'user', name: string) => {
+    const target = role === 'system' ? nodeForm.system_variables : nodeForm.user_variables;
+    delete target[name];
+};
+
+const applyMappingText = (role: 'system' | 'user', name: string, rawValue: string) => {
+    const value = rawValue.trim();
+    if (!value) {
+        clearMapping(role, name);
         return;
     }
 
-    if (node.path.startsWith('input.')) {
-        const path = node.path.replace(/^input\./, '');
-        updateMapping(selection.role, selection.name, { source: 'input', path });
-    } else if (node.path.startsWith('steps.')) {
-        const rest = node.path.replace(/^steps\./, '');
-        const [stepKey, ...pathParts] = rest.split('.');
-        const path = pathParts.join('.') || null;
-        updateMapping(selection.role, selection.name, {
-            source: 'previous_step',
-            step_key: stepKey,
-            path: path || undefined,
+    if (value === 'input') {
+        updateMapping(role, name, {
+            source: 'input',
+            path: undefined,
+            step_key: undefined,
+            value: undefined,
         });
+        return;
     }
+
+    if (value.startsWith('input.')) {
+        updateMapping(role, name, {
+            source: 'input',
+            path: value.slice('input.'.length),
+            step_key: undefined,
+            value: undefined,
+        });
+        return;
+    }
+
+    if (value.startsWith('steps.')) {
+        const rest = value.slice('steps.'.length);
+        const [stepKey, ...pathParts] = rest.split('.');
+        if (stepKey) {
+            updateMapping(role, name, {
+                source: 'previous_step',
+                step_key: stepKey,
+                path: pathParts.length ? pathParts.join('.') : undefined,
+                value: undefined,
+            });
+            return;
+        }
+    }
+
+    const [head, ...rest] = value.split('.');
+    const stepKeyMatch = previousSteps.value.find((step) => step.key === head);
+    if (stepKeyMatch) {
+        updateMapping(role, name, {
+            source: 'previous_step',
+            step_key: head,
+            path: rest.length ? rest.join('.') : undefined,
+            value: undefined,
+        });
+        return;
+    }
+
+    updateMapping(role, name, {
+        source: 'constant',
+        value,
+        path: undefined,
+        step_key: undefined,
+    });
+};
+
+const openMappingStudio = (role?: 'system' | 'user', name?: string) => {
+    mappingStudioOpen.value = true;
+    mappingTarget.value = role && name ? { role, name } : null;
 };
 
 const variablesMissingMapping = computed(() => {
     const collectMissing = (rows: { name: string; mapping: VariableMapping }[]) =>
-        rows
-            .filter(
-                (row) =>
-                    !row.mapping.source ||
-                    (row.mapping.source === 'previous_step' && !row.mapping.step_key) ||
-                    (row.mapping.source !== 'constant' && !row.mapping.path && row.mapping.source !== 'previous_step'),
-            )
-            .map((row) => row.name);
+        rows.filter((row) => !toMappingText(row.mapping)).map((row) => row.name);
 
     return {
         system: collectMissing(variableRowsSystem.value),
         user: collectMissing(variableRowsUser.value),
     };
+});
+
+const buildSnippetParts = (text: string, variable: string) => {
+    if (!text) {
+        return { prefix: '', match: `{{ ${variable} }}`, suffix: '' };
+    }
+
+    const escaped = variable.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');
+    const pattern = new RegExp(`{{\\s*${escaped}\\s*}}`);
+    const match = pattern.exec(text);
+    if (!match || match.index === undefined) {
+        const preview = text.slice(0, 80);
+        return { prefix: preview, match: `{{ ${variable} }}`, suffix: '' };
+    }
+
+    const start = Math.max(0, match.index - 40);
+    const end = Math.min(text.length, match.index + match[0].length + 40);
+    return {
+        prefix: `${start > 0 ? '…' : ''}${text.slice(start, match.index)}`,
+        match: match[0],
+        suffix: `${text.slice(match.index + match[0].length, end)}${end < text.length ? '…' : ''}`,
+    };
+};
+
+const mappingRowsStudio = computed(() => {
+    const systemText = systemPromptText.value || '';
+    const userText = userPromptText.value || '';
+
+    const systemRows = variableRowsSystem.value.map((row) => ({
+        role: 'system' as const,
+        name: row.name,
+        mappingText: row.mappingText,
+        snippet: buildSnippetParts(systemText, row.name),
+        mapping: row.mapping,
+    }));
+
+    const userRows = variableRowsUser.value.map((row) => ({
+        role: 'user' as const,
+        name: row.name,
+        mappingText: row.mappingText,
+        snippet: buildSnippetParts(userText, row.name),
+        mapping: row.mapping,
+    }));
+
+    return [...systemRows, ...userRows];
 });
 
 interface NodeFormState {
@@ -619,11 +833,45 @@ interface NodeFormState {
 
 const CUSTOM_MODEL_VALUE = 'custom';
 
+const normalizeCredentialId = (value: number | string | undefined | null): number | null => {
+    if (value === null || value === undefined) return null;
+    const parsed = typeof value === 'number' ? value : Number(value);
+    return Number.isNaN(parsed) ? null : parsed;
+};
+
 const getModelsForCredential = (credentialId: number | null): ModelOption[] => {
     if (!credentialId) return [];
 
     return props.providerCredentialModels[credentialId] ?? [];
 };
+
+const groupedModelOptions = computed<ModelSelectGroup[]>(() =>
+    props.providerCredentials
+        .map((credential) => {
+            const credentialId = normalizeCredentialId(credential.value);
+            if (!credentialId) {
+                return null;
+            }
+
+            const models = getModelsForCredential(credentialId);
+            const items: ModelSelectOption[] = models.map((model) => ({
+                label: `${model.display_name} (${model.name})`,
+                value: `${credentialId}:${model.id}`,
+                credentialId,
+                modelId: model.id,
+            }));
+
+            items.push({
+                label: 'Custom model…',
+                value: `${credentialId}:${CUSTOM_MODEL_VALUE}`,
+                credentialId,
+                modelId: CUSTOM_MODEL_VALUE,
+            });
+
+            return { label: credential.label, items };
+        })
+        .filter((group): group is ModelSelectGroup => Boolean(group)),
+);
 
 const buildVersionOptions = (templateId: number | null) => {
     const template = props.promptTemplates.find((t) => t.id === templateId);
@@ -649,6 +897,31 @@ const buildVersionOptions = (templateId: number | null) => {
 const systemVersionOptions = computed(() => buildVersionOptions(nodeForm.system_prompt_template_id));
 const userVersionOptions = computed(() => buildVersionOptions(nodeForm.user_prompt_template_id));
 
+const resolveTemplateContent = (templateId: number | null, versionId: number | string | null) => {
+    if (!templateId) return '';
+    const template = props.promptTemplates.find((item) => item.id === templateId);
+    if (!template) return '';
+
+    const resolvedVersionId =
+        versionId && versionId !== 'latest' ? Number(versionId) : template.latest_version_id;
+    if (!resolvedVersionId) return '';
+
+    const version = template.versions.find((item) => item.id === resolvedVersionId);
+    return version?.content ?? '';
+};
+
+const systemPromptText = computed(() =>
+    nodeForm.system_mode === 'template'
+        ? resolveTemplateContent(nodeForm.system_prompt_template_id, nodeForm.system_prompt_version_id)
+        : nodeForm.system_inline_content,
+);
+
+const userPromptText = computed(() =>
+    nodeForm.user_mode === 'template'
+        ? resolveTemplateContent(nodeForm.user_prompt_template_id, nodeForm.user_prompt_version_id)
+        : nodeForm.user_inline_content,
+);
+
 const selectModelForCredential = (credentialId: number | null, preferredModelName?: string | null) => {
     const options = getModelsForCredential(credentialId);
 
@@ -666,7 +939,7 @@ const selectModelForCredential = (credentialId: number | null, preferredModelNam
 };
 
 const buildInitialNodeFormState = (): NodeFormState => {
-    const defaultCredentialId = (props.providerCredentials[0]?.value as number | null) ?? null;
+    const defaultCredentialId = normalizeCredentialId(props.providerCredentials[0]?.value);
     const modelSelection = selectModelForCredential(defaultCredentialId);
 
     return {
@@ -695,8 +968,39 @@ const buildInitialNodeFormState = (): NodeFormState => {
 const nodeForm = useForm<NodeFormState>(buildInitialNodeFormState());
 
 const editingNodeId = ref<number | null>(null);
-const currentModelOptions = computed(() => getModelsForCredential(nodeForm.provider_credential_id));
 const isCustomModel = computed(() => nodeForm.model_choice === CUSTOM_MODEL_VALUE);
+const selectedModelValue = computed<string>({
+    get: () => {
+        if (!nodeForm.provider_credential_id) {
+            return '';
+        }
+
+        return `${nodeForm.provider_credential_id}:${nodeForm.model_choice || CUSTOM_MODEL_VALUE}`;
+    },
+    set: (value) => {
+        if (!value) {
+            nodeForm.provider_credential_id = null;
+            nodeForm.model_choice = '';
+            return;
+        }
+
+        const [credentialIdRaw, modelIdRaw] = value.split(':');
+        const credentialId = credentialIdRaw ? Number(credentialIdRaw) : null;
+        const modelId = modelIdRaw || '';
+        const previousCredentialId = nodeForm.provider_credential_id;
+        const previousChoice = nodeForm.model_choice;
+
+        nodeForm.provider_credential_id = Number.isNaN(credentialId) ? null : credentialId;
+        nodeForm.model_choice = modelId;
+
+        if (
+            modelId === CUSTOM_MODEL_VALUE &&
+            (previousChoice !== CUSTOM_MODEL_VALUE || previousCredentialId !== nodeForm.provider_credential_id)
+        ) {
+            nodeForm.model_name = '';
+        }
+    },
+});
 
 const resetModelSelection = (
     credentialId: number | null,
@@ -709,14 +1013,6 @@ const resetModelSelection = (
 
     nodeForm.model_choice = selection.modelChoice;
     nodeForm.model_name = selection.modelName;
-};
-
-const handleProviderChange = () => {
-    resetModelSelection(
-        nodeForm.provider_credential_id,
-        isCustomModel.value ? nodeForm.model_name : null,
-        isCustomModel.value,
-    );
 };
 
 watch(
@@ -792,7 +1088,7 @@ const openCreateDrawer = () => {
     editingNodeId.value = null;
     nodeForm.reset();
     nodeForm.name = '';
-    const defaultCredentialId = (props.providerCredentials[0]?.value as number | null) ?? null;
+    const defaultCredentialId = normalizeCredentialId(props.providerCredentials[0]?.value);
     nodeForm.provider_credential_id = defaultCredentialId;
     resetModelSelection(defaultCredentialId);
     nodeForm.temperature = null;
@@ -869,16 +1165,32 @@ const saveNode = () => {
         [editingNodeId.value ? 'put' : 'post'](
             editingNodeId.value
                 ? chainRoutes.nodes.update({
-                      project: props.project.id,
+                      project: props.project.uuid,
                       chain: props.chain.id,
                       chainNode: editingNodeId.value,
                   }).url
                 : chainRoutes.nodes.store({
-                      project: props.project.id,
+                      project: props.project.uuid,
                       chain: props.chain.id,
                   }).url,
             {
                 preserveScroll: true,
+                onSuccess: () => {
+                    toast.add({
+                        severity: 'success',
+                        summary: 'Step saved',
+                        detail: 'Chain step saved successfully.',
+                        life: 3000,
+                    });
+                },
+                onError: () => {
+                    toast.add({
+                        severity: 'error',
+                        summary: 'Save failed',
+                        detail: 'Please fix the errors and try again.',
+                        life: 4000,
+                    });
+                },
             },
         );
 };
@@ -887,7 +1199,7 @@ const updateOrder = (node: ChainNodePayload, delta: number) => {
     const newOrder = Math.max(1, node.order_index + delta);
     router.put(
         chainRoutes.nodes.update({
-            project: props.project.id,
+            project: props.project.uuid,
             chain: props.chain.id,
             chainNode: node.id,
         }).url,
@@ -908,7 +1220,7 @@ const updateOrder = (node: ChainNodePayload, delta: number) => {
 const deleteNode = (nodeId: number) => {
     router.delete(
         chainRoutes.nodes.destroy({
-            project: props.project.id,
+            project: props.project.uuid,
             chain: props.chain.id,
             chainNode: nodeId,
         }).url,
@@ -975,7 +1287,7 @@ const submitRun = () => {
             return;
         }
 
-        runDatasetForm.post(`/projects/${props.project.id}/chains/${props.chain.id}/run-dataset`, {
+        runDatasetForm.post(`/projects/${props.project.uuid}/chains/${props.chain.id}/run-dataset`, {
             preserveScroll: true,
             onSuccess: () => {
                 runModalOpen.value = false;
@@ -984,7 +1296,7 @@ const submitRun = () => {
         return;
     }
 
-    runForm.post(`/projects/${props.project.id}/chains/${props.chain.id}/run`, {
+    runForm.post(`/projects/${props.project.uuid}/chains/${props.chain.id}/run`, {
         preserveScroll: true,
         onSuccess: () => {
             runModalOpen.value = false;
@@ -995,10 +1307,11 @@ const submitRun = () => {
 
 <template>
     <ProjectLayout :project="project" :title-suffix="`Chains - ${chain.name}`">
+        <Toast />
         <div class="flex flex-col gap-4">
             <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-transparent bg-transparent">
                 <div class="flex flex-wrap items-center gap-3">
-                    <Button variant="outline" size="sm" :href="chainRoutes.index(project.id).url" as="a">
+                    <Button variant="outline" size="sm" :href="chainRoutes.index(project.uuid).url" as="a">
                         Back to chains
                     </Button>
                     <div class="flex items-center gap-2">
@@ -1156,9 +1469,9 @@ const submitRun = () => {
                                     variant="ghost"
                                     size="icon"
                                     class="h-8 w-8"
-                                    @click="showAdvancedModelSettings = !showAdvancedModelSettings"
+                                    @click="showAvailableData = !showAvailableData"
                                 >
-                                    <Icon name="settings" class="h-4 w-4 text-muted-foreground" />
+                                    <Icon name="info" class="h-4 w-4 text-muted-foreground" />
                                 </Button>
                             </div>
                         </div>
@@ -1169,368 +1482,333 @@ const submitRun = () => {
                                 <Button size="sm" @click="activeNodeId = 'new'">Create Step</Button>
                             </div>
                             <div v-else class="space-y-4">
-                                <div class="grid gap-4 lg:grid-cols-[7fr_3fr]">
-                                    <div class="space-y-4">
-                                        <div class="grid gap-2 md:grid-cols-2">
+                                <div class="relative">
+                                    <div class="space-y-6">
+                                        <div class="space-y-4 border-b border-border/60 pb-4">
+                                            <p class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Step settings</p>
                                             <div class="grid gap-2">
-                                                <Label for="provider_credential_id">Provider credential</Label>
-                                                <select
-                                                    id="provider_credential_id"
-                                                    v-model.number="nodeForm.provider_credential_id"
-                                                    name="provider_credential_id"
-                                                    @change="handleProviderChange"
-                                                    class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                                                >
-                                                    <option v-if="!hasProviderCredentials" :value="null">No credentials available</option>
-                                                    <option
-                                                        v-for="credential in props.providerCredentials"
-                                                        :key="credential.value"
-                                                        :value="credential.value"
+                                                <div class="flex items-center justify-between">
+                                                    <Label for="model_selection">Model</Label>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="icon"
+                                                        class="h-6 w-6"
+                                                        @click="showAdvancedModelSettings = !showAdvancedModelSettings"
                                                     >
-                                                        {{ credential.label }}
-                                                    </option>
-                                                </select>
-                                                <InputError :message="nodeForm.errors.provider_credential_id" />
-                                            </div>
-
-                                            <div class="grid gap-2">
-                                                <Label for="model_name">Model</Label>
-                                                <select
-                                                    id="model_name"
-                                                    v-model="nodeForm.model_choice"
-                                                    name="model_choice"
-                                                    class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                                                >
-                                                    <option v-for="model in currentModelOptions" :key="model.id" :value="model.id">
-                                                        {{ model.display_name }} ({{ model.name }})
-                                                    </option>
-                                                    <option :value="CUSTOM_MODEL_VALUE">Custom...</option>
-                                                </select>
-                                                <p v-if="!currentModelOptions.length" class="text-xs text-muted-foreground">
-                                                    No models available for this provider yet.
+                                                        <Icon name="settings" class="h-3.5 w-3.5 text-muted-foreground" />
+                                                    </Button>
+                                                </div>
+                                                <Select
+                                                    v-model="selectedModelValue"
+                                                    inputId="model_selection"
+                                                    :options="groupedModelOptions"
+                                                    optionLabel="label"
+                                                    optionValue="value"
+                                                    optionGroupLabel="label"
+                                                    optionGroupChildren="items"
+                                                    placeholder="Select a model"
+                                                    filter
+                                                    :filterFields="['label']"
+                                                    size="small"
+                                                    class="w-full"
+                                                    :disabled="!groupedModelOptions.length"
+                                                />
+                                                <p v-if="!groupedModelOptions.length" class="text-xs text-muted-foreground">
+                                                    No provider credentials available yet.
                                                 </p>
-                                                <InputError v-if="!isCustomModel" :message="nodeForm.errors.model_name" />
-                                            </div>
-                                        </div>
-
-                                        <div v-if="isCustomModel" class="grid gap-2">
-                                            <Label for="custom_model_name">Custom model name</Label>
-                                            <Input
-                                                id="custom_model_name"
-                                                v-model="nodeForm.model_name"
-                                                name="model_name"
-                                                placeholder="custom-model-1"
-                                                required
-                                            />
-                                            <InputError :message="nodeForm.errors.model_name" />
-                                        </div>
-
-                                        <div v-if="showAdvancedModelSettings" class="grid gap-4 md:grid-cols-2">
-                                            <div class="grid gap-2">
-                                                <Label for="temperature">Temperature</Label>
-                                                <Input
-                                                    id="temperature"
-                                                    type="number"
-                                                    step="0.1"
-                                                    min="0"
-                                                    max="2"
-                                                    v-model.number="nodeForm.temperature"
-                                                    name="temperature"
+                                                <InputError
+                                                    :message="nodeForm.errors.provider_credential_id || nodeForm.errors.model_name"
                                                 />
                                             </div>
 
-                                            <div class="grid gap-2">
-                                                <Label for="max_tokens">Max tokens</Label>
+                                            <div v-if="isCustomModel" class="grid gap-2">
+                                                <Label for="custom_model_name">Custom model name</Label>
                                                 <Input
-                                                    id="max_tokens"
-                                                    type="number"
-                                                    min="1"
-                                                    v-model.number="nodeForm.max_tokens"
-                                                    name="max_tokens"
+                                                    id="custom_model_name"
+                                                    v-model="nodeForm.model_name"
+                                                    name="model_name"
+                                                    placeholder="custom-model-1"
+                                                    required
+                                                    class="py-1.5"
                                                 />
+                                                <InputError :message="nodeForm.errors.model_name" />
+                                            </div>
+
+                                            <div v-if="showAdvancedModelSettings" class="grid gap-3 md:grid-cols-2">
+                                                <div class="grid gap-2">
+                                                    <Label for="temperature">Temperature</Label>
+                                                    <Input
+                                                        id="temperature"
+                                                        type="number"
+                                                        step="0.1"
+                                                        min="0"
+                                                        max="2"
+                                                        v-model.number="nodeForm.temperature"
+                                                        name="temperature"
+                                                        class="py-1.5"
+                                                    />
+                                                </div>
+
+                                                <div class="grid gap-2">
+                                                    <Label for="max_tokens">Max tokens</Label>
+                                                    <Input
+                                                        id="max_tokens"
+                                                        type="number"
+                                                        min="1"
+                                                        v-model.number="nodeForm.max_tokens"
+                                                        name="max_tokens"
+                                                        class="py-1.5"
+                                                    />
+                                                </div>
                                             </div>
                                         </div>
 
-                                        <div class="space-y-2">
-                                            <Label>System prompt</Label>
-                                            <SelectButton
-                                                v-model="nodeForm.system_mode"
-                                                :options="promptModeOptions"
-                                                option-label="label"
-                                                option-value="value"
-                                            />
-                                            <div v-if="nodeForm.system_mode === 'template'" class="grid gap-2">
-                                                <div class="grid gap-2 md:grid-cols-2">
-                                                    <select
-                                                        v-model.number="nodeForm.system_prompt_template_id"
-                                                        class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                                                        required
-                                                    >
-                                                        <option value="">Select template</option>
-                                                        <option v-for="template in templateOptions" :key="template.value" :value="template.value">
-                                                            {{ template.label }}
-                                                        </option>
-                                                    </select>
-                                                    <select
-                                                        v-model="nodeForm.system_prompt_version_id"
-                                                        class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                                                        :disabled="!nodeForm.system_prompt_template_id"
-                                                    >
-                                                        <option v-for="version in systemVersionOptions" :key="version.value" :value="version.value">
-                                                            {{ version.label }}
-                                                        </option>
-                                                    </select>
-                                                </div>
-                                            </div>
-                                            <div v-else class="grid gap-2">
-                                                <Label class="text-xs text-muted-foreground">Prompt text</Label>
-                                                <textarea
-                                                    v-model="nodeForm.system_inline_content"
-                                                    rows="6"
-                                                    class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                                                    placeholder="Write system prompt with {{variables}}"
-                                                ></textarea>
-                                                <InputError :message="nodeForm.errors['messages_config.0.inline_content']" />
-                                            </div>
-                                            <InputError
-                                                :message="
-                                                    nodeForm.errors['messages_config.0.prompt_template_id'] ||
-                                                    nodeForm.errors['messages_config.0.prompt_version_id'] ||
-                                                    nodeForm.errors['messages_config.0.role'] ||
-                                                    nodeForm.errors.messages_config ||
-                                                    nodeForm.errors.system_prompt_template_id
-                                                "
-                                            />
-                                        </div>
-
-                                        <div class="rounded-md border border-border/80 bg-background p-3">
-                                            <div class="flex items-center justify-between">
-                                                <p class="text-sm font-semibold text-foreground">Variable mapping</p>
-                                                <span
-                                                    v-if="variablesMissingMapping.system.length"
-                                                    class="text-[11px] text-amber-600"
-                                                >
-                                                    Incomplete mappings
-                                                </span>
-                                            </div>
-                                            <p class="mt-1 text-xs text-muted-foreground">
-                                                Select a row to fill via explorer or edit manually.
-                                            </p>
-                                            <div class="mt-2 overflow-hidden rounded-md border border-border/60">
-                                                <div class="grid grid-cols-3 bg-muted px-2 py-1 text-[11px] font-semibold uppercase text-muted-foreground">
-                                                    <span>Variable</span>
-                                                    <span>Source</span>
-                                                    <span>Value / Path</span>
-                                                </div>
-                                                <div
-                                                    v-for="row in variableRowsSystem"
-                                                    :key="row.name"
-                                                    class="grid grid-cols-3 items-center gap-1 px-2 py-1 text-xs"
-                                                    :class="selectedVariable?.role === 'system' && selectedVariable?.name === row.name ? 'bg-primary/10' : ''"
-                                                    @click="selectedVariable = { role: 'system', name: row.name }"
-                                                >
-                                                    <span class="font-semibold text-foreground">{{ row.name }}</span>
-                                                    <select
-                                                        v-model="row.mapping.source"
-                                                        class="w-full rounded border border-input bg-background px-2 py-1 text-xs text-foreground"
-                                                        @change="updateMapping('system', row.name, { source: row.mapping.source as VariableSource })"
-                                                    >
-                                                        <option value="">Select</option>
-                                                        <option value="input">Input</option>
-                                                        <option value="previous_step">Previous step</option>
-                                                        <option value="constant">Constant</option>
-                                                    </select>
-                                                    <div class="flex items-center gap-1">
-                                                        <select
-                                                            v-if="row.mapping.source === 'previous_step'"
-                                                            v-model="row.mapping.step_key"
-                                                            class="w-1/2 rounded border border-input bg-background px-2 py-1 text-xs text-foreground"
-                                                            @change="updateMapping('system', row.name, { step_key: row.mapping.step_key })"
-                                                        >
-                                                            <option value="">Step</option>
-                                                            <option
-                                                                v-for="step in previousSteps"
-                                                                :key="step.key"
-                                                                :value="step.key"
-                                                            >
-                                                                {{ step.name }}
-                                                            </option>
-                                                        </select>
-                                                        <input
-                                                            v-if="row.mapping.source === 'constant'"
-                                                            v-model="row.mapping.value"
-                                                            class="w-full rounded border border-input bg-background px-2 py-1 text-xs text-foreground"
-                                                            placeholder="Value"
-                                                            @input="updateMapping('system', row.name, { value: row.mapping.value })"
-                                                        />
-                                                        <input
-                                                            v-else
-                                                            v-model="row.mapping.path"
-                                                            class="w-full rounded border border-input bg-background px-2 py-1 text-xs text-foreground"
-                                                            placeholder="Path"
-                                                            @input="updateMapping('system', row.name, { path: row.mapping.path })"
+                                        <div class="space-y-4 border-b border-border/60 pb-4">
+                                            <p class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Prompt config</p>
+                                            <div class="grid gap-4 lg:grid-cols-2">
+                                                <div class="space-y-2">
+                                                    <div class="flex items-center justify-between gap-2">
+                                                        <Label>System prompt</Label>
+                                                        <SelectButton
+                                                            v-model="nodeForm.system_mode"
+                                                            :options="promptModeOptions"
+                                                            option-label="label"
+                                                            option-value="value"
+                                                            size="small"
                                                         />
                                                     </div>
-                                                </div>
-                                                <div v-if="variableRowsSystem.length === 0" class="px-2 py-2 text-xs text-muted-foreground">
-                                                    No variables detected for this template.
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        <div class="space-y-2">
-                                            <Label>User prompt (optional)</Label>
-                                            <SelectButton
-                                                v-model="nodeForm.user_mode"
-                                                :options="promptModeOptions"
-                                                option-label="label"
-                                                option-value="value"
-                                            />
-                                            <div v-if="nodeForm.user_mode === 'template'" class="grid gap-2">
-                                                <div class="grid gap-2 md:grid-cols-2">
-                                                    <select
-                                                        v-model.number="nodeForm.user_prompt_template_id"
-                                                        class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                                                    >
-                                                        <option value="">No user prompt</option>
-                                                        <option v-for="template in templateOptions" :key="template.value" :value="template.value">
-                                                            {{ template.label }}
-                                                        </option>
-                                                    </select>
-                                                    <select
-                                                        v-model="nodeForm.user_prompt_version_id"
-                                                        class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                                                        :disabled="!nodeForm.user_prompt_template_id"
-                                                    >
-                                                        <option v-for="version in userVersionOptions" :key="version.value" :value="version.value">
-                                                            {{ version.label }}
-                                                        </option>
-                                                    </select>
-                                                </div>
-                                            </div>
-                                            <div v-else class="grid gap-2">
-                                                <Label class="text-xs text-muted-foreground">Prompt text</Label>
-                                                <textarea
-                                                    v-model="nodeForm.user_inline_content"
-                                                    rows="6"
-                                                    class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                                                    placeholder="Write user prompt with {{variables}}"
-                                                ></textarea>
-                                                <InputError :message="nodeForm.errors['messages_config.1.inline_content']" />
-                                            </div>
-                                            <InputError
-                                                :message="
-                                                    nodeForm.errors['messages_config.1.prompt_template_id'] ||
-                                                    nodeForm.errors['messages_config.1.prompt_version_id'] ||
-                                                    nodeForm.errors['messages_config.1.role'] ||
-                                                    nodeForm.errors.messages_config
-                                                "
-                                            />
-                                        </div>
-
-                                        <div class="rounded-md border border-border/80 bg-background p-3">
-                                            <div class="flex items-center justify-between">
-                                                <p class="text-sm font-semibold text-foreground">Variable mapping (user)</p>
-                                                <span
-                                                    v-if="variablesMissingMapping.user.length"
-                                                    class="text-[11px] text-amber-600"
-                                                >
-                                                    Incomplete mappings
-                                                </span>
-                                            </div>
-                                            <p class="mt-1 text-xs text-muted-foreground">
-                                                Select a row to fill via explorer or edit manually.
-                                            </p>
-                                            <div class="mt-2 overflow-hidden rounded-md border border-border/60">
-                                                <div class="grid grid-cols-3 bg-muted px-2 py-1 text-[11px] font-semibold uppercase text-muted-foreground">
-                                                    <span>Variable</span>
-                                                    <span>Source</span>
-                                                    <span>Value / Path</span>
-                                                </div>
-                                                <div
-                                                    v-for="row in variableRowsUser"
-                                                    :key="row.name"
-                                                    class="grid grid-cols-3 items-center gap-1 px-2 py-1 text-xs"
-                                                    :class="selectedVariable?.role === 'user' && selectedVariable?.name === row.name ? 'bg-primary/10' : ''"
-                                                    @click="selectedVariable = { role: 'user', name: row.name }"
-                                                >
-                                                    <span class="font-semibold text-foreground">{{ row.name }}</span>
-                                                    <select
-                                                        v-model="row.mapping.source"
-                                                        class="w-full rounded border border-input bg-background px-2 py-1 text-xs text-foreground"
-                                                        @change="updateMapping('user', row.name, { source: row.mapping.source as VariableSource })"
-                                                    >
-                                                        <option value="">Select</option>
-                                                        <option value="input">Input</option>
-                                                        <option value="previous_step">Previous step</option>
-                                                        <option value="constant">Constant</option>
-                                                    </select>
-                                                    <div class="flex items-center gap-1">
-                                                        <select
-                                                            v-if="row.mapping.source === 'previous_step'"
-                                                            v-model="row.mapping.step_key"
-                                                            class="w-1/2 rounded border border-input bg-background px-2 py-1 text-xs text-foreground"
-                                                            @change="updateMapping('user', row.name, { step_key: row.mapping.step_key })"
-                                                        >
-                                                            <option value="">Step</option>
-                                                            <option
-                                                                v-for="step in previousSteps"
-                                                                :key="step.key"
-                                                                :value="step.key"
-                                                            >
-                                                                {{ step.name }}
-                                                            </option>
-                                                        </select>
-                                                        <input
-                                                            v-if="row.mapping.source === 'constant'"
-                                                            v-model="row.mapping.value"
-                                                            class="w-full rounded border border-input bg-background px-2 py-1 text-xs text-foreground"
-                                                            placeholder="Value"
-                                                            @input="updateMapping('user', row.name, { value: row.mapping.value })"
+                                                    <div v-if="nodeForm.system_mode === 'template'" class="grid w-full gap-2 md:grid-cols-2">
+                                                        <Select
+                                                            v-model="nodeForm.system_prompt_template_id"
+                                                            :options="templateOptions"
+                                                            option-label="label"
+                                                            option-value="value"
+                                                            placeholder="Select template"
+                                                            filter
+                                                            size="small"
+                                                            class="w-full"
                                                         />
-                                                        <input
-                                                            v-else
-                                                            v-model="row.mapping.path"
-                                                            class="w-full rounded border border-input bg-background px-2 py-1 text-xs text-foreground"
-                                                            placeholder="Path"
-                                                            @input="updateMapping('user', row.name, { path: row.mapping.path })"
+                                                        <Select
+                                                            v-model="nodeForm.system_prompt_version_id"
+                                                            :options="systemVersionOptions"
+                                                            option-label="label"
+                                                            option-value="value"
+                                                            placeholder="Latest"
+                                                            filter
+                                                            size="small"
+                                                            class="w-full"
+                                                            :disabled="!nodeForm.system_prompt_template_id"
                                                         />
                                                     </div>
+                                                    <div
+                                                        v-else
+                                                        class="flex w-full items-center rounded-md border border-dashed border-border/70 bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground"
+                                                    >
+                                                        Manual input
+                                                    </div>
+                                                    <div class="relative">
+                                                        <PromptEditor
+                                                            :model-value="
+                                                                nodeForm.system_mode === 'template'
+                                                                    ? systemPromptText
+                                                                    : nodeForm.system_inline_content
+                                                            "
+                                                            v-model:mode="systemEditorMode"
+                                                            v-model:preset="systemEditorPreset"
+                                                            :read-only="nodeForm.system_mode === 'template'"
+                                                            placeholder="Write system prompt with {{variables}}"
+                                                            height="220px"
+                                                            show-controls
+                                                            @update:model-value="
+                                                                (value) => {
+                                                                    if (nodeForm.system_mode === 'inline') {
+                                                                        nodeForm.system_inline_content = value;
+                                                                    }
+                                                                }
+                                                            "
+                                                        />
+                                                        <span
+                                                            v-if="nodeForm.system_mode === 'template'"
+                                                            class="pointer-events-none absolute right-3 top-9 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+                                                        >
+                                                            Read-only template
+                                                        </span>
+                                                    </div>
+                                                    <InputError :message="nodeForm.errors['messages_config.0.inline_content']" />
+                                                    <InputError
+                                                        :message="
+                                                            nodeForm.errors['messages_config.0.prompt_template_id'] ||
+                                                            nodeForm.errors['messages_config.0.prompt_version_id'] ||
+                                                            nodeForm.errors['messages_config.0.role'] ||
+                                                            nodeForm.errors.messages_config ||
+                                                            nodeForm.errors.system_prompt_template_id
+                                                        "
+                                                    />
+                                                    <div v-if="variableRowsSystem.length" class="space-y-2">
+                                                        <div class="flex items-center justify-between">
+                                                            <p class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">System variables</p>
+                                                            <span
+                                                                v-if="variablesMissingMapping.system.length"
+                                                                class="text-[11px] text-amber-600"
+                                                            >
+                                                                Incomplete mappings
+                                                            </span>
+                                                        </div>
+                                                        <div class="flex flex-wrap gap-2">
+                                                            <button
+                                                                v-for="row in variableRowsSystem"
+                                                                :key="row.name"
+                                                                type="button"
+                                                                class="inline-flex items-center gap-2 rounded-full border bg-background px-3 py-1 text-xs font-semibold text-foreground transition hover:border-primary/60 hover:bg-primary/5"
+                                                                :class="!row.mappingText ? 'border-rose-300' : 'border-border/60'"
+                                                                @click="openMappingStudio('system', row.name)"
+                                                            >
+                                                                <span>{{ row.name }}</span>
+                                                                <span v-if="row.mappingText" class="text-xs font-normal text-muted-foreground">
+                                                                    {{ row.mappingText }}
+                                                                </span>
+                                                                <Icon
+                                                                    v-if="!row.mappingText"
+                                                                    name="unlink"
+                                                                    class="h-3.5 w-3.5 text-amber-600"
+                                                                />
+                                                            </button>
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                                <div v-if="variableRowsUser.length === 0" class="px-2 py-2 text-xs text-muted-foreground">
-                                                    No variables detected for this template.
+
+                                                <div class="space-y-2">
+                                                    <div class="flex items-center justify-between gap-2">
+                                                        <Label>User prompt</Label>
+                                                        <SelectButton
+                                                            v-model="nodeForm.user_mode"
+                                                            :options="promptModeOptions"
+                                                            option-label="label"
+                                                            option-value="value"
+                                                            size="small"
+                                                        />
+                                                    </div>
+                                                    <div v-if="nodeForm.user_mode === 'template'" class="grid w-full gap-2 md:grid-cols-2">
+                                                        <Select
+                                                            v-model="nodeForm.user_prompt_template_id"
+                                                            :options="userTemplateOptions"
+                                                            option-label="label"
+                                                            option-value="value"
+                                                            placeholder="No user prompt"
+                                                            filter
+                                                            size="small"
+                                                            class="w-full"
+                                                        />
+                                                        <Select
+                                                            v-model="nodeForm.user_prompt_version_id"
+                                                            :options="userVersionOptions"
+                                                            option-label="label"
+                                                            option-value="value"
+                                                            placeholder="Latest"
+                                                            filter
+                                                            size="small"
+                                                            class="w-full"
+                                                            :disabled="!nodeForm.user_prompt_template_id"
+                                                        />
+                                                    </div>
+                                                    <div
+                                                        v-else
+                                                        class="flex w-full items-center rounded-md border border-dashed border-border/70 bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground"
+                                                    >
+                                                        Manual input
+                                                    </div>
+                                                    <div class="relative">
+                                                        <PromptEditor
+                                                            :model-value="
+                                                                nodeForm.user_mode === 'template'
+                                                                    ? userPromptText
+                                                                    : nodeForm.user_inline_content
+                                                            "
+                                                            v-model:mode="userEditorMode"
+                                                            v-model:preset="userEditorPreset"
+                                                            :read-only="nodeForm.user_mode === 'template'"
+                                                            placeholder="Write user prompt with {{variables}}"
+                                                            height="220px"
+                                                            show-controls
+                                                            @update:model-value="
+                                                                (value) => {
+                                                                    if (nodeForm.user_mode === 'inline') {
+                                                                        nodeForm.user_inline_content = value;
+                                                                    }
+                                                                }
+                                                            "
+                                                        />
+                                                        <span
+                                                            v-if="nodeForm.user_mode === 'template'"
+                                                            class="pointer-events-none absolute right-3 top-9 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+                                                        >
+                                                            Read-only template
+                                                        </span>
+                                                    </div>
+                                                    <InputError :message="nodeForm.errors['messages_config.1.inline_content']" />
+                                                    <InputError
+                                                        :message="
+                                                            nodeForm.errors['messages_config.1.prompt_template_id'] ||
+                                                            nodeForm.errors['messages_config.1.prompt_version_id'] ||
+                                                            nodeForm.errors['messages_config.1.role'] ||
+                                                            nodeForm.errors.messages_config
+                                                        "
+                                                    />
+                                                    <div v-if="variableRowsUser.length" class="space-y-2">
+                                                        <div class="flex items-center justify-between">
+                                                            <p class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">User variables</p>
+                                                            <span
+                                                                v-if="variablesMissingMapping.user.length"
+                                                                class="text-[11px] text-amber-600"
+                                                            >
+                                                                Incomplete mappings
+                                                            </span>
+                                                        </div>
+                                                        <div class="flex flex-wrap gap-2">
+                                                            <button
+                                                                v-for="row in variableRowsUser"
+                                                                :key="row.name"
+                                                                type="button"
+                                                                class="inline-flex items-center gap-2 rounded-full border bg-background px-3 py-1 text-xs font-semibold text-foreground transition hover:border-primary/60 hover:bg-primary/5"
+                                                                :class="!row.mappingText ? 'border-rose-300' : 'border-border/60'"
+                                                                @click="openMappingStudio('user', row.name)"
+                                                            >
+                                                                <span>{{ row.name }}</span>
+                                                                <span v-if="row.mappingText" class="text-xs font-normal text-muted-foreground">
+                                                                    {{ row.mappingText }}
+                                                                </span>
+                                                                <Icon
+                                                                    v-if="!row.mappingText"
+                                                                    name="unlink"
+                                                                    class="h-3.5 w-3.5 text-amber-600"
+                                                                />
+                                                            </button>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
 
-                                        <div class="grid gap-2">
-                                            <Label for="output_schema">Output schema (TS-like, optional)</Label>
-                                            <textarea
-                                                id="output_schema"
-                                                v-model="nodeForm.output_schema_definition"
-                                                name="output_schema_definition"
-                                                rows="6"
-                                                placeholder='{\n  question: string;\n  answers: string[];\n  explanation?: string;\n  difficulty: "easy" | "medium" | "hard";\n}'
-                                                class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                                            ></textarea>
-                                            <InputError :message="nodeForm.errors.output_schema_definition" />
-                                        </div>
+                                        <div class="space-y-4 border-b border-border/60 pb-4">
+                                            <p class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Output + behavior</p>
+                                            <div class="grid gap-2">
+                                                <Label for="output_schema">Output schema (TS-like, optional)</Label>
+                                                <textarea
+                                                    id="output_schema"
+                                                    v-model="nodeForm.output_schema_definition"
+                                                    name="output_schema_definition"
+                                                    rows="6"
+                                                    placeholder='{\n  question: string;\n  answers: string[];\n  explanation?: string;\n  difficulty: "easy" | "medium" | "hard";\n}'
+                                                    class="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                                                ></textarea>
+                                                <InputError :message="nodeForm.errors.output_schema_definition" />
+                                            </div>
 
-                                        <div class="flex items-center gap-2">
-                                            <Checkbox id="stop_on_validation_error" v-model:checked="nodeForm.stop_on_validation_error" />
-                                            <Label for="stop_on_validation_error">Stop on validation error</Label>
-                                        </div>
+                                            <div class="flex items-center gap-2">
+                                                <Checkbox id="stop_on_validation_error" v-model:checked="nodeForm.stop_on_validation_error" />
+                                                <Label for="stop_on_validation_error">Stop on validation error</Label>
+                                            </div>
 
-                                        <div class="grid gap-2 md:w-32">
-                                            <Label for="order_index">Order</Label>
-                                            <Input
-                                                id="order_index"
-                                                type="number"
-                                                min="1"
-                                                v-model.number="nodeForm.order_index"
-                                                name="order_index"
-                                            />
-                                            <InputError :message="nodeForm.errors.order_index" />
                                         </div>
 
                                         <div class="flex items-center justify-end gap-2">
@@ -1541,22 +1819,43 @@ const submitRun = () => {
                                         </div>
                                     </div>
 
-                                    <Card class="lg:sticky lg:top-4 h-fit bg-muted/40">
-                                        <template #title>
-                                            <div class="flex items-center justify-between">
-                                                <span class="text-sm font-semibold text-foreground">Available Data</span>
-                                                <span class="text-[11px] text-muted-foreground">Order {{ currentOrderIndex }}</span>
-                                            </div>
-                                        </template>
-                                        <template #content>
-                                            <Tree
-                                                class="w-full"
-                                                :value="availableDataTree"
-                                                selectionMode="single"
-                                                @node-select="onTreeSelect"
-                                            />
-                                        </template>
-                                    </Card>
+                                    <div
+                                        v-if="showAvailableData"
+                                        class="absolute right-0 top-0 z-10 h-full w-full max-w-sm border-l border-border/60 bg-background/95 p-3 backdrop-blur"
+                                    >
+                                        <div class="flex items-center justify-between border-b border-border/60 pb-2">
+                                            <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Available data</span>
+                                            <Button variant="ghost" size="icon" class="h-7 w-7" @click="showAvailableData = false">
+                                                <Icon name="x" class="h-4 w-4 text-muted-foreground" />
+                                            </Button>
+                                        </div>
+                                        <div class="mt-2 text-[11px] text-muted-foreground">Order {{ currentOrderIndex }}</div>
+                                        <Input
+                                            v-model="availableDataSearch"
+                                            placeholder="Search fields..."
+                                            class="mt-3"
+                                        />
+                                        <Tree
+                                            class="mt-3 w-full font-mono text-xs"
+                                            :value="filteredAvailableDataTree"
+                                            selectionMode="single"
+                                            @node-select="onTreeSelect"
+                                        >
+                                            <template #default="{ node }">
+                                                <div class="flex items-center gap-2">
+                                                    <span class="text-sm font-sans text-foreground">{{ node.label }}</span>
+                                                    <span v-if="node.data?.path" class="text-[11px] text-muted-foreground">
+                                                        {{ node.data.path }}
+                                                    </span>
+                                                </div>
+                                            </template>
+                                        </Tree>
+                                        <div class="mt-4 flex justify-end">
+                                            <Button variant="outline" size="sm" @click="showAvailableData = false">
+                                                Close
+                                            </Button>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1565,6 +1864,115 @@ const submitRun = () => {
             </div>
         </div>
     </ProjectLayout>
+
+    <Dialog :open="mappingStudioOpen" @update:open="mappingStudioOpen = $event">
+        <DialogContent class="w-[90vw] sm:max-w-7xl">
+            <DialogHeader>
+                <DialogTitle>Variable Mapper</DialogTitle>
+                <DialogDescription>Map required variables to input or previous step outputs.</DialogDescription>
+            </DialogHeader>
+            <div class="flex h-[70vh] gap-6">
+                <div class="flex w-[360px] flex-col gap-3">
+                    <div class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        Available Data
+                    </div>
+                    <Input
+                        v-model="mappingStudioSearch"
+                        placeholder="Search fields..."
+                        class="text-sm"
+                    />
+                    <div class="flex-1 overflow-y-auto overflow-x-auto">
+                        <Tree
+                            class="w-full font-mono text-xs"
+                            :value="filteredStudioDataTree"
+                            selectionMode="single"
+                            @node-select="onStudioTreeSelect"
+                        >
+                            <template #default="{ node }">
+                                <div class="flex items-center gap-2 border-l border-border/30 pl-2">
+                                    <span class="text-sm font-sans text-foreground">{{ node.label }}</span>
+                                    <span
+                                        v-if="node.data?.path"
+                                        class="cursor-grab text-[11px] text-muted-foreground"
+                                    >
+                                        {{ node.data.path }}
+                                    </span>
+                                    <button
+                                        v-if="node.data?.path"
+                                        type="button"
+                                        class="ml-1 cursor-grab text-muted-foreground transition hover:text-foreground"
+                                        draggable="true"
+                                        title="Drag to map"
+                                        @dragstart.stop="(event) => handleTreeDragStart(event, node.data?.path)"
+                                    >
+                                        <Icon name="move" class="h-3.5 w-3.5" />
+                                    </button>
+                                    <button
+                                        v-if="node.data?.path"
+                                        type="button"
+                                        class="ml-auto text-muted-foreground transition hover:text-foreground"
+                                        @click.stop="copyPath(node.data.path)"
+                                    >
+                                        <Icon name="copy" class="h-3.5 w-3.5" />
+                                    </button>
+                                </div>
+                            </template>
+                        </Tree>
+                    </div>
+                </div>
+                <div class="hidden w-px bg-border/60 lg:block"></div>
+                <div class="flex flex-1 flex-col gap-3">
+                    <div class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        Required Mappings
+                    </div>
+                    <div class="flex-1 space-y-4 overflow-y-auto pr-2">
+                        <button
+                            v-for="row in mappingRowsStudio"
+                            :key="`${row.role}:${row.name}`"
+                            type="button"
+                            class="w-full rounded-md px-2 py-2 text-left transition"
+                            :class="mappingTarget?.role === row.role && mappingTarget?.name === row.name ? 'bg-muted/40' : ''"
+                            @click="mappingTarget = { role: row.role, name: row.name }"
+                        >
+                            <div class="flex min-h-[56px] items-center gap-2 text-xs font-mono text-muted-foreground">
+                                <span>{{ row.snippet.prefix }}</span>
+                                <span class="rounded bg-amber-100 px-1.5 py-0.5 text-amber-900">
+                                    {{ row.snippet.match }}
+                                </span>
+                                <span>{{ row.snippet.suffix }}</span>
+                                <Icon v-if="row.mappingText" name="check" class="ml-auto h-4 w-4 text-emerald-600" />
+                            </div>
+                            <div class="mt-2">
+                                <div
+                                    class="rounded-md"
+                                    @dragover.prevent
+                                    @drop="(event) => handleMappingDrop(event, row.role, row.name)"
+                                >
+                                    <Input
+                                        :model-value="row.mappingText"
+                                        placeholder="Click a data node on the left..."
+                                        class="text-xs font-mono"
+                                        :class="[
+                                            row.mappingText ? 'text-blue-600' : '',
+                                            mappingFlashKey === `${row.role}:${row.name}` ? 'ring-2 ring-emerald-300/60' : '',
+                                            mappingTarget?.role === row.role && mappingTarget?.name === row.name
+                                                ? 'ring-1 ring-primary/30'
+                                                : '',
+                                        ]"
+                                        @update:model-value="(value) => applyMappingText(row.role, row.name, value)"
+                                        @focus="mappingTarget = { role: row.role, name: row.name }"
+                                    />
+                                </div>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <DialogFooter class="flex items-center justify-end gap-2">
+                <Button variant="outline" @click="mappingStudioOpen = false">Close</Button>
+            </DialogFooter>
+        </DialogContent>
+    </Dialog>
 
     <Dialog :open="providerModalOpen" @update:open="providerModalOpen = $event">
         <DialogContent class="sm:max-w-lg">

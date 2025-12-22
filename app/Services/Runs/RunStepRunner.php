@@ -7,6 +7,7 @@ use App\Models\Run;
 use App\Services\Llm\LlmService;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 
 class RunStepRunner
@@ -92,7 +93,9 @@ class RunStepRunner
                 $parsedOutput,
                 $validationErrors,
                 $status,
-                $durationMs
+                $durationMs,
+                $this->resolveTargetPromptVersionId($node, $promptVersions),
+                $node->provider_credential_id
             );
 
             $stepKey = $this->stepKey($node);
@@ -119,5 +122,34 @@ class RunStepRunner
         $key = Str::slug($node->name, '_');
 
         return $key ?: 'step_'.$node->id;
+    }
+
+    /**
+     * @param array{by_id: Collection<int, \App\Models\PromptVersion>, by_template: Collection<int, \App\Models\PromptVersion>} $promptVersions
+     */
+    private function resolveTargetPromptVersionId(ChainNode $node, array $promptVersions): ?int
+    {
+        $configs = collect($node->messages_config ?? []);
+
+        $target = $configs->firstWhere('role', 'system')
+            ?? $configs->firstWhere('role', 'user');
+
+        if (! is_array($target)) {
+            return null;
+        }
+
+        $versionId = Arr::get($target, 'prompt_version_id');
+        if ($versionId) {
+            return (int) $versionId;
+        }
+
+        $templateId = Arr::get($target, 'prompt_template_id');
+        if (! $templateId) {
+            return null;
+        }
+
+        $promptVersion = $promptVersions['by_template']->get((int) $templateId);
+
+        return $promptVersion?->id ? (int) $promptVersion->id : null;
     }
 }
