@@ -227,7 +227,7 @@ class ChainViewService
     {
         return ProviderCredential::query()
             ->orderBy('name')
-            ->get(['id', 'name', 'provider']);
+            ->get(['id', 'name', 'provider', 'encrypted_api_key', 'metadata']);
     }
 
     private function providerCredentialModels(?Collection $providerCredentials = null): array

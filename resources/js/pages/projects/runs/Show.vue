@@ -100,11 +100,12 @@ const run = ref<RunPayload>({ ...props.run });
 const steps = ref<RunStepPayload[]>([...props.steps]);
 const eventSource = ref<EventSource | null>(null);
 
-const sortedSteps = computed(() => [...steps.value].sort((a, b) => a.order_index - b.order_index));
-const finalStep = computed(() => sortedSteps.value[sortedSteps.value.length - 1] ?? null);
+const stepsAscending = computed(() => [...steps.value].sort((a, b) => a.order_index - b.order_index));
+const stepsDescending = computed(() => [...stepsAscending.value].reverse());
+const finalStep = computed(() => stepsAscending.value[stepsAscending.value.length - 1] ?? null);
 const selectedStepId = ref<number | null>(null);
 const selectedStep = computed(
-    () => sortedSteps.value.find((step) => step.id === selectedStepId.value) ?? null
+    () => stepsAscending.value.find((step) => step.id === selectedStepId.value) ?? null
 );
 const tokenUsageLabel = computed(() => {
     const tokensIn = run.value.total_tokens_in;
@@ -297,20 +298,20 @@ const openFinalFeedback = () => {
 };
 
 const selectDefaultStep = () => {
-    if (!sortedSteps.value.length) {
+    if (!stepsAscending.value.length) {
         selectedStepId.value = null;
         return;
     }
 
-    if (selectedStepId.value && sortedSteps.value.some((step) => step.id === selectedStepId.value)) {
+    if (selectedStepId.value && stepsAscending.value.some((step) => step.id === selectedStepId.value)) {
         return;
     }
 
-    const failedStep = sortedSteps.value.find((step) => step.status === 'failed');
-    selectedStepId.value = failedStep?.id ?? sortedSteps.value[sortedSteps.value.length - 1].id;
+    const failedStep = stepsAscending.value.find((step) => step.status === 'failed');
+    selectedStepId.value = failedStep?.id ?? stepsAscending.value[stepsAscending.value.length - 1].id;
 };
 
-watch(() => sortedSteps.value, () => selectDefaultStep(), { immediate: true });
+watch(() => stepsAscending.value, () => selectDefaultStep(), { immediate: true });
 
 type DiffLine = {
     type: 'add' | 'remove' | 'context';
@@ -506,7 +507,7 @@ const createVersionFromSuggestion = (step: RunStepPayload, feedbackId: number) =
                 <div class="border-r border-border/60">
                     <div class="divide-y divide-border/60">
                         <button
-                            v-for="step in sortedSteps"
+                            v-for="step in stepsDescending"
                             :key="step.id"
                             type="button"
                             @click="selectedStepId = step.id"

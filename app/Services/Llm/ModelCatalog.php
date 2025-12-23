@@ -31,6 +31,9 @@ class ModelCatalog
                     'provider' => $credential->provider,
                     'credential_id' => $credential->id,
                     'error' => $exception->getMessage(),
+                    'exception_class' => $exception::class,
+                    'previous_class' => $exception->getPrevious() ? $exception->getPrevious()::class : null,
+                    'previous_message' => $exception->getPrevious()?->getMessage(),
                 ]);
                 $models = [];
             }
@@ -54,7 +57,7 @@ class ModelCatalog
 
     private function normalizeModels(array $models): array
     {
-        return array_map(function (array $model): array {
+        $normalized = array_map(function (array $model): array {
             $id = (string) ($model['id'] ?? $model['name'] ?? '');
             $name = (string) ($model['name'] ?? $id);
             $displayName = (string) ($model['display_name'] ?? $name);
@@ -65,5 +68,9 @@ class ModelCatalog
                 'display_name' => $displayName,
             ];
         }, $models);
+
+        usort($normalized, fn (array $a, array $b): int => strcasecmp($a['name'], $b['name']));
+
+        return $normalized;
     }
 }

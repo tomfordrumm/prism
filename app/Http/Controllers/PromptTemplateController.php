@@ -225,7 +225,7 @@ class PromptTemplateController extends Controller
         return ProviderCredential::query()
             ->where('tenant_id', currentTenantId())
             ->orderBy('name')
-            ->get(['id', 'name', 'provider']);
+            ->get(['id', 'name', 'provider', 'encrypted_api_key', 'metadata']);
     }
 
     private function providerCredentialOptions(Collection $providerCredentials): array

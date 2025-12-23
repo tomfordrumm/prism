@@ -4,6 +4,7 @@ namespace App\Services\Llm;
 
 use App\Models\ProviderCredential;
 use Illuminate\Support\Facades\Crypt;
+use OpenAI\Exceptions\ErrorException;
 use RuntimeException;
 use Throwable;
 use OpenAI\Factory as OpenAIFactory;
@@ -49,6 +50,15 @@ class OpenAiProviderClient implements LlmProviderClientInterface
         try {
             $response = $client->models()->list();
         } catch (Throwable $exception) {
+            if ($exception instanceof ErrorException) {
+                logger()->warning('OpenAI list models failed', [
+                    'credential_id' => $credential->id,
+                    'status' => $exception->getStatusCode(),
+                    'error_type' => $exception->getErrorType(),
+                    'error_code' => $exception->getErrorCode(),
+                    'error_message' => $exception->getErrorMessage(),
+                ]);
+            }
             throw new RuntimeException('OpenAI list models failed: '.$exception->getMessage(), previous: $exception);
         }
 
@@ -57,7 +67,16 @@ class OpenAiProviderClient implements LlmProviderClientInterface
 
     private function makeClient(ProviderCredential $credential)
     {
-        $apiKey = Crypt::decryptString($credential->encrypted_api_key);
+        try {
+            $apiKey = Crypt::decryptString($credential->encrypted_api_key);
+        } catch (Throwable $exception) {
+            logger()->warning('OpenAI decrypt api key failed', [
+                'credential_id' => $credential->id,
+                'exception_class' => $exception::class,
+                'message' => $exception->getMessage(),
+            ]);
+            throw $exception;
+        }
         $factory = (new OpenAIFactory())->withApiKey($apiKey);
 
         /** @var array $metadata */
