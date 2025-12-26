@@ -14,6 +14,7 @@ use App\Services\Llm\ModelCatalog;
 use App\Support\Presenters\RunStepPresenter;
 use App\Support\TargetPromptResolver;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 
 class RunViewService
 {
@@ -79,6 +80,7 @@ class RunViewService
 
         return [
             ...$details,
+            'runHistory' => $this->runHistory($project, $run),
             'providerCredentials' => $this->providerCredentialOptions($providerCredentials),
             'providerCredentialModels' => $this->providerCredentialModels($providerCredentials),
         ];
@@ -183,5 +185,104 @@ class RunViewService
             ->where('tenant_id', currentTenantId())
             ->orderBy('name')
             ->get(['id', 'name', 'provider', 'encrypted_api_key', 'metadata']);
+    }
+
+    private function runHistory(Project $project, Run $run): array
+    {
+        $query = Run::query()
+            ->where('project_id', $project->id);
+
+        if ($run->chain_id) {
+            $query->where('chain_id', $run->chain_id);
+        } else {
+            $query->whereNull('chain_id');
+        }
+
+        if (! $run->chain_id) {
+            $promptTemplateId = $this->promptTemplateIdFromSnapshot($run->chain_snapshot);
+            if ($promptTemplateId) {
+                $query->where('chain_snapshot->0->prompt_template_id', $promptTemplateId);
+            }
+        }
+
+        $runs = $query
+            ->orderByDesc('created_at')
+            ->with(['latestStep' => function ($query): void {
+                $query->select(
+                    'run_steps.id',
+                    'run_steps.run_id',
+                    'run_steps.order_index',
+                    'run_steps.response_raw',
+                    'run_steps.parsed_output'
+                );
+            }])
+            ->take(10)
+            ->get(['id', 'chain_id', 'status', 'duration_ms', 'total_tokens_in', 'total_tokens_out', 'created_at']);
+
+        return $runs
+            ->map(function (Run $item) use ($project): array {
+                $snippet = $this->runFinalSnippet($item->latestStep);
+
+                return [
+                    'id' => $item->id,
+                    'status' => $item->status,
+                    'duration_ms' => $item->duration_ms,
+                    'total_tokens_in' => $item->total_tokens_in,
+                    'total_tokens_out' => $item->total_tokens_out,
+                    'created_at' => $item->created_at?->toIso8601String(),
+                    'href' => route('projects.runs.show', [$project, $item]),
+                    'final_snippet' => $snippet,
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    private function promptTemplateIdFromSnapshot(mixed $snapshot): ?int
+    {
+        if (! is_array($snapshot) || $snapshot === []) {
+            return null;
+        }
+
+        $first = $snapshot[0] ?? null;
+        if (! is_array($first)) {
+            return null;
+        }
+
+        $value = $first['prompt_template_id'] ?? null;
+
+        return is_numeric($value) ? (int) $value : null;
+    }
+
+    private function runFinalSnippet(?RunStep $step): ?string
+    {
+        if (! $step) {
+            return null;
+        }
+
+        $raw = $step->response_raw;
+        $content = data_get($raw, 'choices.0.message.content')
+            ?? data_get($raw, 'choices.0.content')
+            ?? data_get($raw, 'message.content')
+            ?? data_get($raw, 'content');
+
+        if (is_array($content)) {
+            $content = collect($content)
+                ->pluck('text')
+                ->filter()
+                ->implode(' ');
+        }
+
+        if (! $content && $step->parsed_output) {
+            $content = json_encode($step->parsed_output);
+        }
+
+        if (! is_string($content)) {
+            return null;
+        }
+
+        $clean = trim(preg_replace('/\s+/', ' ', $content) ?? '');
+
+        return $clean !== '' ? Str::limit($clean, 140) : null;
     }
 }

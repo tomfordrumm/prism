@@ -6,14 +6,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
-interface ModelSelectGroup {
+interface ProviderSelectOption {
     label: string;
-    items: Array<{
-        label: string;
-        value: string;
-        credentialId: number;
-        modelId: string;
-    }>;
+    value: number;
+}
+
+interface ModelSelectOption {
+    label: string;
+    value: string;
+    credentialId: number;
+    modelId: string;
 }
 
 interface NodeForm {
@@ -25,14 +27,17 @@ interface NodeForm {
 
 const props = defineProps<{
     form: NodeForm;
-    selectedModelValue: string;
-    groupedModelOptions: ModelSelectGroup[];
+    providerOptions: ProviderSelectOption[];
+    modelOptions: ModelSelectOption[];
+    selectedProviderId: number | null;
+    selectedModelChoice: string;
     isCustomModel: boolean;
     showAdvanced: boolean;
 }>();
 
 const emit = defineEmits<{
-    (event: 'update:selectedModelValue', value: string): void;
+    (event: 'update:provider-credential-id', value: number | null): void;
+    (event: 'update:model-choice', value: string): void;
     (event: 'update:showAdvanced', value: boolean): void;
     (event: 'update:model-name', value: string): void;
     (event: 'update:temperature', value: number | null): void;
@@ -45,38 +50,57 @@ const toggleAdvanced = () => emit('update:showAdvanced', !props.showAdvanced);
 <template>
     <div class="space-y-4 border-b border-border/60 pb-4">
         <p class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Step settings</p>
-        <div class="grid gap-2">
-            <div class="flex items-center justify-between">
-                <Label for="model_selection">Model</Label>
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    class="h-6 w-6"
-                    @click="toggleAdvanced"
-                >
-                    <Icon name="settings" class="h-3.5 w-3.5 text-muted-foreground" />
-                </Button>
+        <div class="grid gap-3 md:grid-cols-2">
+            <div class="grid gap-2">
+                <div class="flex items-center justify-between">
+                    <Label for="provider_selection">Provider</Label>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        class="h-6 w-6"
+                        @click="toggleAdvanced"
+                    >
+                        <Icon name="settings" class="h-3.5 w-3.5 text-muted-foreground" />
+                    </Button>
+                </div>
+                <Select
+                    :model-value="selectedProviderId"
+                    inputId="provider_selection"
+                    :options="providerOptions"
+                    optionLabel="label"
+                    optionValue="value"
+                    placeholder="Select a provider"
+                    filter
+                    :filterFields="['label']"
+                    size="small"
+                    class="w-full"
+                    :disabled="!providerOptions.length"
+                    @update:model-value="(value) => emit('update:provider-credential-id', value)"
+                />
+                <p v-if="!providerOptions.length" class="text-xs text-muted-foreground">
+                    No provider credentials available yet.
+                </p>
+                <InputError :message="form.errors.provider_credential_id" />
             </div>
-            <Select
-                :model-value="selectedModelValue"
-                inputId="model_selection"
-                :options="groupedModelOptions"
-                optionLabel="label"
-                optionValue="value"
-                optionGroupLabel="label"
-                optionGroupChildren="items"
-                placeholder="Select a model"
-                filter
-                :filterFields="['label']"
-                size="small"
-                class="w-full"
-                :disabled="!groupedModelOptions.length"
-                @update:model-value="(value) => emit('update:selectedModelValue', value)"
-            />
-            <p v-if="!groupedModelOptions.length" class="text-xs text-muted-foreground">
-                No provider credentials available yet.
-            </p>
-            <InputError :message="form.errors.provider_credential_id || form.errors.model_name" />
+
+            <div class="grid gap-2">
+                <Label for="model_selection">Model</Label>
+                <Select
+                    :model-value="selectedModelChoice"
+                    inputId="model_selection"
+                    :options="modelOptions"
+                    optionLabel="label"
+                    optionValue="value"
+                    :placeholder="selectedProviderId ? 'Select a model' : 'Select provider first'"
+                    filter
+                    :filterFields="['label']"
+                    size="small"
+                    class="w-full"
+                    :disabled="!selectedProviderId"
+                    @update:model-value="(value) => emit('update:model-choice', value)"
+                />
+                <InputError :message="form.errors.model_name" />
+            </div>
         </div>
 
         <div v-if="isCustomModel" class="grid gap-2">

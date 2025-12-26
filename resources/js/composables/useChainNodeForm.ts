@@ -31,16 +31,16 @@ interface NodeFormState {
     order_index: number;
 }
 
+interface ProviderSelectOption {
+    label: string;
+    value: number;
+}
+
 interface ModelSelectOption {
     label: string;
     value: string;
     credentialId: number;
     modelId: string;
-}
-
-interface ModelSelectGroup {
-    label: string;
-    items: ModelSelectOption[];
 }
 
 const CUSTOM_MODEL_VALUE = 'custom';
@@ -186,33 +186,40 @@ export function useChainNodeForm(options: {
         return providerCredentialModels.value[credentialId] ?? [];
     };
 
-    const groupedModelOptions = computed<ModelSelectGroup[]>(() =>
+    const providerSelectOptions = computed<ProviderSelectOption[]>(() =>
         providerCredentials.value
             .map((credential) => {
                 const credentialId = normalizeCredentialId(credential.value);
-                if (!credentialId) {
-                    return null;
-                }
-
-                const models = getModelsForCredential(credentialId);
-                const items: ModelSelectOption[] = models.map((model) => ({
-                    label: `${model.display_name} (${model.name})`,
-                    value: `${credentialId}:${model.id}`,
-                    credentialId,
-                    modelId: model.id,
-                }));
-
-                items.push({
-                    label: 'Custom model...',
-                    value: `${credentialId}:${CUSTOM_MODEL_VALUE}`,
-                    credentialId,
-                    modelId: CUSTOM_MODEL_VALUE,
-                });
-
-                return { label: credential.label, items };
+                if (!credentialId) return null;
+                return {
+                    label: credential.label,
+                    value: credentialId,
+                };
             })
-            .filter((group): group is ModelSelectGroup => Boolean(group)),
+            .filter((option): option is ProviderSelectOption => Boolean(option)),
     );
+
+    const modelSelectOptions = computed<ModelSelectOption[]>(() => {
+        const credentialId = nodeForm.provider_credential_id;
+        if (!credentialId) return [];
+
+        const models = getModelsForCredential(credentialId);
+        const items: ModelSelectOption[] = models.map((model) => ({
+            label: `${model.display_name} (${model.name})`,
+            value: model.id,
+            credentialId,
+            modelId: model.id,
+        }));
+
+        items.push({
+            label: 'Custom model...',
+            value: CUSTOM_MODEL_VALUE,
+            credentialId,
+            modelId: CUSTOM_MODEL_VALUE,
+        });
+
+        return items;
+    });
 
     const buildVersionOptions = (templateId: number | null) => {
         const template = promptTemplates.value.find((t) => t.id === templateId);
@@ -262,15 +269,20 @@ export function useChainNodeForm(options: {
         return { modelChoice: CUSTOM_MODEL_VALUE, modelName: preferredModelName ?? '' };
     };
 
+    const getDefaultCredentialId = () =>
+        providerCredentials.value.length === 1
+            ? normalizeCredentialId(providerCredentials.value[0]?.value)
+            : null;
+
     const buildInitialNodeFormState = (): NodeFormState => {
-        const defaultCredentialId = normalizeCredentialId(providerCredentials.value[0]?.value);
-        const modelSelection = selectModelForCredential(defaultCredentialId);
+        const defaultCredentialId = getDefaultCredentialId();
+        const modelSelection = defaultCredentialId ? selectModelForCredential(defaultCredentialId) : null;
 
         return {
             name: '',
             provider_credential_id: defaultCredentialId,
-            model_name: modelSelection.modelName,
-            model_choice: modelSelection.modelChoice,
+            model_name: modelSelection?.modelName ?? '',
+            model_choice: modelSelection?.modelChoice ?? '',
             temperature: null,
             max_tokens: null,
             system_mode: 'template',
@@ -295,36 +307,32 @@ export function useChainNodeForm(options: {
     const currentOrderIndex = computed(() => Number(nodeForm.order_index) || nodes.value.length + 1);
     const isCustomModel = computed(() => nodeForm.model_choice === CUSTOM_MODEL_VALUE);
 
-    const selectedModelValue = computed<string>({
+    const selectedProviderId = computed<number | null>({
         get: () => {
-            if (!nodeForm.provider_credential_id) {
-                return '';
-            }
-
-            return `${nodeForm.provider_credential_id}:${nodeForm.model_choice || CUSTOM_MODEL_VALUE}`;
+            return nodeForm.provider_credential_id;
         },
         set: (value) => {
-            if (!value) {
+            const normalized = normalizeCredentialId(value);
+            if (!normalized) {
                 nodeForm.provider_credential_id = null;
                 nodeForm.model_choice = '';
+                nodeForm.model_name = '';
                 return;
             }
 
-            const [credentialIdRaw, modelIdRaw] = value.split(':');
-            const credentialId = credentialIdRaw ? Number(credentialIdRaw) : null;
-            const modelId = modelIdRaw || '';
             const previousCredentialId = nodeForm.provider_credential_id;
-            const previousChoice = nodeForm.model_choice;
+            nodeForm.provider_credential_id = normalized;
 
-            nodeForm.provider_credential_id = Number.isNaN(credentialId) ? null : credentialId;
-            nodeForm.model_choice = modelId;
-
-            if (
-                modelId === CUSTOM_MODEL_VALUE &&
-                (previousChoice !== CUSTOM_MODEL_VALUE || previousCredentialId !== nodeForm.provider_credential_id)
-            ) {
-                nodeForm.model_name = '';
+            if (previousCredentialId !== normalized) {
+                resetModelSelection(normalized);
             }
+        },
+    });
+
+    const selectedModelChoice = computed<string>({
+        get: () => nodeForm.model_choice,
+        set: (value) => {
+            nodeForm.model_choice = value;
         },
     });
 
@@ -333,6 +341,12 @@ export function useChainNodeForm(options: {
         preferredModelName?: string | null,
         forceCustom = false,
     ) => {
+        if (!credentialId) {
+            nodeForm.model_choice = '';
+            nodeForm.model_name = '';
+            return;
+        }
+
         const selection = forceCustom
             ? { modelChoice: CUSTOM_MODEL_VALUE, modelName: preferredModelName ?? '' }
             : selectModelForCredential(credentialId, preferredModelName);
@@ -360,7 +374,7 @@ export function useChainNodeForm(options: {
         editingNodeId.value = null;
         nodeForm.reset();
         nodeForm.name = '';
-        const defaultCredentialId = normalizeCredentialId(providerCredentials.value[0]?.value);
+        const defaultCredentialId = getDefaultCredentialId();
         nodeForm.provider_credential_id = defaultCredentialId;
         resetModelSelection(defaultCredentialId);
         nodeForm.temperature = null;
@@ -436,13 +450,27 @@ export function useChainNodeForm(options: {
         },
     );
 
+    watch(
+        () => providerCredentials.value,
+        (credentials) => {
+            if (nodeForm.provider_credential_id || credentials.length !== 1) return;
+            const defaultCredentialId = normalizeCredentialId(credentials[0]?.value);
+            if (!defaultCredentialId) return;
+            nodeForm.provider_credential_id = defaultCredentialId;
+            resetModelSelection(defaultCredentialId);
+        },
+        { deep: true },
+    );
+
     return {
         nodeForm,
         editingNodeId,
         currentOrderIndex,
-        groupedModelOptions,
+        providerSelectOptions,
+        modelSelectOptions,
         isCustomModel,
-        selectedModelValue,
+        selectedProviderId,
+        selectedModelChoice,
         systemVersionOptions,
         userVersionOptions,
         systemPromptText,

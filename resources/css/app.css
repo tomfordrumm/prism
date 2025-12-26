@@ -2,6 +2,8 @@
 
 @import 'tw-animate-css';
 
+@import 'highlight.js/styles/github.css';
+
 @source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
 @source '../../storage/framework/views/*.php';
 
@@ -176,4 +178,8 @@
     border-radius: 0.35rem;
     color: hsl(28 45% 25%);
     padding: 0.05rem 0.2rem;
+}
+
+.hljs {
+    background: transparent;
 }

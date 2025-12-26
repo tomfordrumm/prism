@@ -4,8 +4,61 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "9b18f2e935718db12fea39929e7a5b3a",
+    "content-hash": "64bb5c49e2ca85582be66aea1eae2aa4",
     "packages": [
+        {
+            "name": "anthropic-ai/sdk",
+            "version": "v0.4.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/anthropics/anthropic-sdk-php.git",
+                "reference": "b3d72ddf236fadba639a9f4a63f22b2f9535c34b"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/anthropics/anthropic-sdk-php/zipball/b3d72ddf236fadba639a9f4a63f22b2f9535c34b",
+                "reference": "b3d72ddf236fadba639a9f4a63f22b2f9535c34b",
+                "shasum": ""
+            },
+            "require": {
+                "php": "^8.1",
+                "php-http/discovery": "^1",
+                "psr/http-client": "^1",
+                "psr/http-client-implementation": "^1",
+                "psr/http-factory-implementation": "^1",
+                "psr/http-message": "^1|^2"
+            },
+            "require-dev": {
+                "friendsofphp/php-cs-fixer": "^3",
+                "nyholm/psr7": "^1",
+                "pestphp/pest": "^3",
+                "phpstan/extension-installer": "^1",
+                "phpstan/phpstan": "^2",
+                "phpstan/phpstan-phpunit": "^2",
+                "phpunit/phpunit": "^11",
+                "symfony/http-client": "^7"
+            },
+            "type": "library",
+            "autoload": {
+                "files": [
+                    "src/Core.php",
+                    "src/Client.php"
+                ],
+                "psr-4": {
+                    "Anthropic\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "description": "Anthropic PHP SDK",
+            "support": {
+                "issues": "https://github.com/anthropics/anthropic-sdk-php/issues",
+                "source": "https://github.com/anthropics/anthropic-sdk-php/tree/v0.4.0"
+            },
+            "time": "2025-11-24T23:38:33+00:00"
+        },
         {
             "name": "bacon/bacon-qr-code",
             "version": "v3.0.3",
@@ -683,6 +736,164 @@
                 }
             ],
             "time": "2025-12-03T09:33:47+00:00"
+        },
+        {
+            "name": "google-gemini-php/client",
+            "version": "2.7.3",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/google-gemini-php/client.git",
+                "reference": "1391adf5206a17a642571ceff88e660280551726"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/google-gemini-php/client/zipball/1391adf5206a17a642571ceff88e660280551726",
+                "reference": "1391adf5206a17a642571ceff88e660280551726",
+                "shasum": ""
+            },
+            "require": {
+                "php": "^8.1.0",
+                "php-http/discovery": "^1.19.2",
+                "psr/http-client-implementation": "*",
+                "psr/http-factory-implementation": "*"
+            },
+            "require-dev": {
+                "guzzlehttp/guzzle": "^7.8.1",
+                "guzzlehttp/psr7": "^2.6.2",
+                "laravel/pint": "^1.18.1",
+                "mockery/mockery": "^1.6.7",
+                "pestphp/pest": "^2.32.3",
+                "phpstan/phpstan": "^2.1.32"
+            },
+            "suggest": {
+                "ext-fileinfo": "Reads upload file size and mime type if not provided"
+            },
+            "type": "library",
+            "autoload": {
+                "files": [
+                    "src/Gemini.php"
+                ],
+                "psr-4": {
+                    "Gemini\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Fatih AYDIN",
+                    "email": "aydinfatih52@gmail.com"
+                }
+            ],
+            "description": "Gemini API is a supercharged PHP API client that allows you to interact with the Gemini API",
+            "keywords": [
+                "Gemini",
+                "banana",
+                "client",
+                "gemini-pro",
+                "google",
+                "language",
+                "natural",
+                "nlp",
+                "php",
+                "processing",
+                "sdk"
+            ],
+            "support": {
+                "issues": "https://github.com/google-gemini-php/client/issues",
+                "source": "https://github.com/google-gemini-php/client/tree/2.7.3"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/Plytas",
+                    "type": "github"
+                },
+                {
+                    "url": "https://github.com/aydinfatih",
+                    "type": "github"
+                }
+            ],
+            "time": "2025-12-17T18:20:25+00:00"
+        },
+        {
+            "name": "google-gemini-php/laravel",
+            "version": "2.0.3",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/google-gemini-php/laravel.git",
+                "reference": "0a438aa9aaae3e2ce8d6ca68afcd05f3542071ae"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/google-gemini-php/laravel/zipball/0a438aa9aaae3e2ce8d6ca68afcd05f3542071ae",
+                "reference": "0a438aa9aaae3e2ce8d6ca68afcd05f3542071ae",
+                "shasum": ""
+            },
+            "require": {
+                "google-gemini-php/client": "^2.0",
+                "laravel/framework": "^9.0|^10.0|^11.0|^12.0",
+                "php": "^8.1.0"
+            },
+            "require-dev": {
+                "guzzlehttp/guzzle": "^7.8.1",
+                "laravel/pint": "^1.13.6",
+                "pestphp/pest": "^2.27.0",
+                "pestphp/pest-plugin-arch": "^2.4.1",
+                "phpstan/phpstan": "^1.10.47",
+                "symfony/var-dumper": "^6.4.0|^7.0.1"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Gemini\\Laravel\\ServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Gemini\\Laravel\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Fatih AYDIN",
+                    "email": "aydinfatih52@gmail.com"
+                }
+            ],
+            "description": "Google Gemini PHP for Laravel is a supercharged PHP API client that allows you to interact with the Google Gemini AI API",
+            "keywords": [
+                "Gemini",
+                "api",
+                "client",
+                "language",
+                "laravel",
+                "natural",
+                "php",
+                "processing",
+                "sdk"
+            ],
+            "support": {
+                "issues": "https://github.com/google-gemini-php/laravel/issues",
+                "source": "https://github.com/google-gemini-php/laravel/tree/2.0.3"
+            },
+            "funding": [
+                {
+                    "url": "https://github.com/Plytas",
+                    "type": "github"
+                },
+                {
+                    "url": "https://github.com/aydinfatih",
+                    "type": "github"
+                }
+            ],
+            "time": "2025-11-25T15:34:02+00:00"
         },
         {
             "name": "graham-campbell/result-type",

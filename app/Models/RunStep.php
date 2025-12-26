@@ -23,6 +23,7 @@ class RunStep extends Model
             'response_raw' => 'array',
             'parsed_output' => 'array',
             'validation_errors' => 'array',
+            'retry_reasons' => 'array',
         ];
     }
 

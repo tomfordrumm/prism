@@ -8,6 +8,7 @@ class LlmResponseDto
         public readonly string $content,
         public readonly array $usage = [],
         public readonly array $raw = [],
+        public readonly array $meta = [],
     ) {
     }
 

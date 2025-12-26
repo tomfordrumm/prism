@@ -39,7 +39,8 @@ class OpenAiProviderClient implements LlmProviderClientInterface
         return new LlmResponseDto(
             content: is_string($content) ? $content : json_encode($content),
             usage: $usage,
-            raw: $response->toArray()
+            raw: $response->toArray(),
+            meta: []
         );
     }
 

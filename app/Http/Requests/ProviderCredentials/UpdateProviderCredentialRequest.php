@@ -14,7 +14,7 @@ class UpdateProviderCredentialRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'provider' => ['required', 'string', 'in:openai,anthropic,google'],
+            'provider' => ['required', 'string', 'in:openai,anthropic,google,openrouter'],
             'name' => ['required', 'string', 'max:255'],
             'api_key' => ['nullable', 'string'],
             'metadata' => ['nullable', 'array'],

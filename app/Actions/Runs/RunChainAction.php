@@ -36,7 +36,7 @@ class RunChainAction
                 'status' => $stepRunResult['failed'] ? 'failed' : 'success',
                 'total_tokens_in' => $stepRunResult['total_tokens_in'] ?: null,
                 'total_tokens_out' => $stepRunResult['total_tokens_out'] ?: null,
-                'duration_ms' => now()->diffInMilliseconds($runStart),
+                'duration_ms' => (int) $runStart->diffInMilliseconds(now(), true),
                 'finished_at' => now(),
             ]);
 

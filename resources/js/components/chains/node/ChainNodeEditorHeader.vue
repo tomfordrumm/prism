@@ -33,7 +33,7 @@ const startEdit = () => {
                 <Input
                     :ref="nodeNameInputRef"
                     :model-value="nodeName"
-                    class="h-9 w-72 text-xl font-semibold"
+                    class="h-9 w-72 py-1.5 text-xl font-semibold"
                     placeholder="Step name"
                     @blur="emit('save-node')"
                     @keyup.enter.prevent="emit('save-node')"

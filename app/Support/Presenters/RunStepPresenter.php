@@ -71,6 +71,8 @@ class RunStepPresenter
             'tokens_in' => $step->tokens_in,
             'tokens_out' => $step->tokens_out,
             'duration_ms' => $step->duration_ms,
+            'retry_count' => $step->retry_count,
+            'retry_reasons' => $step->retry_reasons,
             'validation_errors' => $step->validation_errors,
             'created_at' => $step->created_at,
             /** @phpstan-ignore argument.type */

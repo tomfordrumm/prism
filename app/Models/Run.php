@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Run extends Model
 {
@@ -49,6 +50,11 @@ class Run extends Model
     public function steps(): HasMany
     {
         return $this->hasMany(RunStep::class);
+    }
+
+    public function latestStep(): HasOne
+    {
+        return $this->hasOne(RunStep::class)->latestOfMany('order_index');
     }
 
     public function feedback(): HasMany

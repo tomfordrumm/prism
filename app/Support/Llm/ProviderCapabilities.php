@@ -11,8 +11,9 @@ class ProviderCapabilities
     {
         return [
             'openai' => ['supports_chat' => true, 'supports_model_listing' => true],
-            'anthropic' => ['supports_chat' => false, 'supports_model_listing' => false],
-            'google' => ['supports_chat' => false, 'supports_model_listing' => false],
+            'anthropic' => ['supports_chat' => true, 'supports_model_listing' => true],
+            'google' => ['supports_chat' => true, 'supports_model_listing' => true],
+            'openrouter' => ['supports_chat' => true, 'supports_model_listing' => true],
         ];
     }
 

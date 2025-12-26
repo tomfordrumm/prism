@@ -49,7 +49,7 @@ const deleteNode = (node: ChainNodePayload | null | undefined) => {
 </script>
 
 <template>
-    <div class="chain-timeline overflow-y-auto pr-1">
+    <div class="chain-timeline pr-1">
         <Timeline :value="items" align="left" layout="vertical" class="timeline">
             <template #marker="slotProps">
                 <div
@@ -72,10 +72,10 @@ const deleteNode = (node: ChainNodePayload | null | undefined) => {
                 <div
                     v-if="slotProps.item.type === 'step'"
                     :class="[
-                        'group ml-2 rounded-md border border-transparent px-3 py-2 text-sm transition hover:bg-primary/5 cursor-pointer',
+                        'group ml-2 cursor-pointer border-l-2 border-transparent px-2 py-1.5 text-sm transition hover:bg-muted/40',
                         isActive(slotProps.item.id)
-                            ? 'border-l-4 border-primary bg-primary/10 shadow-sm'
-                            : 'bg-background/60',
+                            ? 'border-primary bg-muted/60'
+                            : 'text-muted-foreground',
                     ]"
                     @click="selectItem(slotProps.item)"
                 >
@@ -116,7 +116,7 @@ const deleteNode = (node: ChainNodePayload | null | undefined) => {
                 </div>
                 <div
                     v-else
-                    class="ml-2 rounded-md bg-background/60 px-3 py-1 text-xs font-semibold text-muted-foreground"
+                    class="ml-2 px-2 py-1 text-xs font-semibold text-muted-foreground"
                 >
                     {{ slotProps.item.name }}
                 </div>

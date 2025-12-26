@@ -10,6 +10,9 @@ class ModelCatalog
 {
     public function __construct(
         private OpenAiProviderClient $openAiProviderClient,
+        private AnthropicProviderClient $anthropicProviderClient,
+        private GeminiProviderClient $geminiProviderClient,
+        private OpenRouterProviderClient $openRouterProviderClient,
         private StubProviderClient $stubProviderClient,
     ) {
     }
@@ -50,7 +53,9 @@ class ModelCatalog
     {
         return match ($credential->provider) {
             'openai' => $this->openAiProviderClient,
-            'anthropic', 'google' => $this->stubProviderClient,
+            'anthropic' => $this->anthropicProviderClient,
+            'google' => $this->geminiProviderClient,
+            'openrouter' => $this->openRouterProviderClient,
             default => throw new InvalidArgumentException('Unsupported provider: '.$credential->provider),
         };
     }

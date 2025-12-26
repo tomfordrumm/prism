@@ -20,5 +20,10 @@ return [
             ['id' => 'gemini-1.5-pro', 'name' => 'gemini-1.5-pro', 'display_name' => 'Gemini 1.5 Pro'],
             ['id' => 'gemini-1.5-flash', 'name' => 'gemini-1.5-flash', 'display_name' => 'Gemini 1.5 Flash'],
         ],
+        'openrouter' => [
+            ['id' => 'openai/gpt-4o-mini', 'name' => 'openai/gpt-4o-mini', 'display_name' => 'OpenAI GPT-4o Mini'],
+            ['id' => 'anthropic/claude-3.5-sonnet', 'name' => 'anthropic/claude-3.5-sonnet', 'display_name' => 'Claude 3.5 Sonnet'],
+            ['id' => 'google/gemini-1.5-flash', 'name' => 'google/gemini-1.5-flash', 'display_name' => 'Gemini 1.5 Flash'],
+        ],
     ],
 ];

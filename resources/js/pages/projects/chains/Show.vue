@@ -82,9 +82,11 @@ const {
     nodeForm,
     editingNodeId,
     currentOrderIndex,
-    groupedModelOptions,
+    providerSelectOptions,
+    modelSelectOptions,
     isCustomModel,
-    selectedModelValue,
+    selectedProviderId,
+    selectedModelChoice,
     systemVersionOptions,
     userVersionOptions,
     systemPromptText,
@@ -679,126 +681,125 @@ const submitRun = () => {
                 @save="updateChain"
             />
 
-            <div class="rounded-lg border border-border bg-card p-4">
-                <div class="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                        <h3 class="text-lg font-semibold text-foreground">Steps</h3>
-                        <p class="text-sm text-muted-foreground">
-                            Compact view of chain nodes. Edit or add via the side panel.
-                        </p>
+            <div class="flex flex-col gap-4 lg:flex-row lg:gap-0 lg:h-[calc(100vh-8rem)] lg:overflow-hidden">
+                <div class="flex flex-col gap-3 lg:h-full lg:w-[30%] lg:min-w-[260px] lg:max-w-[360px] lg:pr-4 lg:overflow-y-auto">
+                    <div class="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                            <h3 class="text-lg font-semibold text-foreground">Steps</h3>
+                            <p class="text-sm text-muted-foreground">Chain flow navigator.</p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <Button
+                                v-if="!hasProviderCredentials"
+                                size="sm"
+                                variant="outline"
+                                @click="providerModalOpen = true"
+                            >
+                                Add provider
+                            </Button>
+                            <Button size="sm" @click="activeNodeId = 'new'">+ Add step</Button>
+                        </div>
                     </div>
-                    <div class="flex items-center gap-2">
-                        <Button
-                            v-if="!hasProviderCredentials"
-                            size="sm"
-                            variant="outline"
-                            @click="providerModalOpen = true"
-                        >
-                            Add provider
-                        </Button>
-                        <Button size="sm" @click="activeNodeId = 'new'">+ Add step</Button>
-                    </div>
+
+                    <ChainTimeline
+                        :items="timelineItems"
+                        :active-id="activeNodeId"
+                        @select="(id) => { activeNodeId = id; }"
+                        @move="updateOrder"
+                        @delete="deleteNode"
+                    />
                 </div>
 
-                <div class="mt-4 grid gap-4 lg:grid-cols-12 min-h-[520px] lg:min-h-[calc(100vh-260px)]">
-                    <div class="lg:col-span-2">
-                        <ChainTimeline
-                            :items="timelineItems"
-                            :active-id="activeNodeId"
-                            @select="(id) => { activeNodeId = id; }"
-                            @move="updateOrder"
-                            @delete="deleteNode"
-                        />
-                    </div>
+                <div class="flex min-h-[520px] flex-1 flex-col lg:h-full lg:overflow-hidden lg:border-l lg:border-border/60 lg:pl-4">
+                    <ChainNodeEditorHeader
+                        :node-name-editing="nodeNameEditing"
+                        :node-name="nodeForm.name"
+                        :active-node-id="activeNodeId"
+                        :node-name-input-ref="nodeNameInputRef"
+                        @update:node-name-editing="nodeNameEditing = $event"
+                        @update:node-name="nodeForm.name = $event"
+                        @save-node="saveNode"
+                        @toggle-available-data="showAvailableData = !showAvailableData"
+                    />
+                    <div class="flex-1 overflow-y-auto px-1 py-3">
+                        <div v-if="!activeNodeId" class="flex h-full flex-col items-center justify-center gap-3 text-center">
+                            <i class="pi pi-sitemap text-4xl text-muted-foreground/70"></i>
+                            <div class="text-sm text-muted-foreground">Select a step to edit</div>
+                            <Button size="sm" @click="activeNodeId = 'new'">Create Step</Button>
+                        </div>
+                        <div v-else class="space-y-4">
+                            <div class="relative">
+                                <ChainNodeSettingsPanel
+                                    :can-save="!nodeForm.processing"
+                                    :save-label="editingNodeId ? 'Save changes' : 'Create step'"
+                                    @cancel="activeNodeId = null"
+                                    @save="saveNode"
+                                >
+                                    <template #sections>
+                                        <ChainNodeModelSettings
+                                            :form="nodeForm"
+                                            :provider-options="providerSelectOptions"
+                                            :model-options="modelSelectOptions"
+                                            :selected-provider-id="selectedProviderId"
+                                            :selected-model-choice="selectedModelChoice"
+                                            :is-custom-model="isCustomModel"
+                                            :show-advanced="showAdvancedModelSettings"
+                                            @update:provider-credential-id="selectedProviderId = $event"
+                                            @update:model-choice="selectedModelChoice = $event"
+                                            @update:show-advanced="showAdvancedModelSettings = $event"
+                                            @update:model-name="nodeForm.model_name = $event"
+                                            @update:temperature="nodeForm.temperature = $event"
+                                            @update:max-tokens="nodeForm.max_tokens = $event"
+                                        />
 
-                    <div class="flex min-h-[520px] flex-col rounded-md border border-border bg-background/60 lg:col-span-10">
-                        <ChainNodeEditorHeader
-                            :node-name-editing="nodeNameEditing"
-                            :node-name="nodeForm.name"
-                            :active-node-id="activeNodeId"
-                            :node-name-input-ref="nodeNameInputRef"
-                            @update:node-name-editing="nodeNameEditing = $event"
-                            @update:node-name="nodeForm.name = $event"
-                            @save-node="saveNode"
-                            @toggle-available-data="showAvailableData = !showAvailableData"
-                        />
-                        <div class="flex-1 overflow-y-auto p-3">
-                            <div v-if="!activeNodeId" class="flex h-full flex-col items-center justify-center gap-3 text-center">
-                                <i class="pi pi-sitemap text-4xl text-muted-foreground/70"></i>
-                                <div class="text-sm text-muted-foreground">Select a step to edit or create a new one</div>
-                                <Button size="sm" @click="activeNodeId = 'new'">Create Step</Button>
-                            </div>
-                            <div v-else class="space-y-4">
-                                <div class="relative">
-                                    <ChainNodeSettingsPanel
-                                        :can-save="!nodeForm.processing"
-                                        :save-label="editingNodeId ? 'Save changes' : 'Create step'"
-                                        @cancel="activeNodeId = null"
-                                        @save="saveNode"
-                                    >
-                                        <template #sections>
-                                            <ChainNodeModelSettings
-                                                :form="nodeForm"
-                                                :selected-model-value="selectedModelValue"
-                                                :grouped-model-options="groupedModelOptions"
-                                                :is-custom-model="isCustomModel"
-                                                :show-advanced="showAdvancedModelSettings"
-                                                @update:selected-model-value="selectedModelValue = $event"
-                                                @update:show-advanced="showAdvancedModelSettings = $event"
-                                                @update:model-name="nodeForm.model_name = $event"
-                                                @update:temperature="nodeForm.temperature = $event"
-                                                @update:max-tokens="nodeForm.max_tokens = $event"
-                                            />
+                                        <ChainNodePromptConfig
+                                            :form="nodeForm"
+                                            :prompt-mode-options="promptModeOptions"
+                                            :template-options="templateOptions"
+                                            :user-template-options="userTemplateOptions"
+                                            :system-version-options="systemVersionOptions"
+                                            :user-version-options="userVersionOptions"
+                                            :system-prompt-text="systemPromptText"
+                                            :user-prompt-text="userPromptText"
+                                            :system-editor-mode="systemEditorMode"
+                                            :system-editor-preset="systemEditorPreset"
+                                            :user-editor-mode="userEditorMode"
+                                            :user-editor-preset="userEditorPreset"
+                                            :variable-rows-system="variableRowsSystem"
+                                            :variable-rows-user="variableRowsUser"
+                                            :variables-missing-mapping="variablesMissingMapping"
+                                            @update:system-mode="nodeForm.system_mode = $event"
+                                            @update:system-template-id="nodeForm.system_prompt_template_id = $event"
+                                            @update:system-version-id="nodeForm.system_prompt_version_id = $event"
+                                            @update:system-inline-content="nodeForm.system_inline_content = $event"
+                                            @update:user-mode="nodeForm.user_mode = $event"
+                                            @update:user-template-id="nodeForm.user_prompt_template_id = $event"
+                                            @update:user-version-id="nodeForm.user_prompt_version_id = $event"
+                                            @update:user-inline-content="nodeForm.user_inline_content = $event"
+                                            @update:systemEditorMode="systemEditorMode = $event"
+                                            @update:systemEditorPreset="systemEditorPreset = $event"
+                                            @update:userEditorMode="userEditorMode = $event"
+                                            @update:userEditorPreset="userEditorPreset = $event"
+                                            @open-mapping-studio="({ role, name }) => openMappingStudio(role, name)"
+                                        />
 
-                                            <ChainNodePromptConfig
-                                                :form="nodeForm"
-                                                :prompt-mode-options="promptModeOptions"
-                                                :template-options="templateOptions"
-                                                :user-template-options="userTemplateOptions"
-                                                :system-version-options="systemVersionOptions"
-                                                :user-version-options="userVersionOptions"
-                                                :system-prompt-text="systemPromptText"
-                                                :user-prompt-text="userPromptText"
-                                                :system-editor-mode="systemEditorMode"
-                                                :system-editor-preset="systemEditorPreset"
-                                                :user-editor-mode="userEditorMode"
-                                                :user-editor-preset="userEditorPreset"
-                                                :variable-rows-system="variableRowsSystem"
-                                                :variable-rows-user="variableRowsUser"
-                                                :variables-missing-mapping="variablesMissingMapping"
-                                                @update:system-mode="nodeForm.system_mode = $event"
-                                                @update:system-template-id="nodeForm.system_prompt_template_id = $event"
-                                                @update:system-version-id="nodeForm.system_prompt_version_id = $event"
-                                                @update:system-inline-content="nodeForm.system_inline_content = $event"
-                                                @update:user-mode="nodeForm.user_mode = $event"
-                                                @update:user-template-id="nodeForm.user_prompt_template_id = $event"
-                                                @update:user-version-id="nodeForm.user_prompt_version_id = $event"
-                                                @update:user-inline-content="nodeForm.user_inline_content = $event"
-                                                @update:systemEditorMode="systemEditorMode = $event"
-                                                @update:systemEditorPreset="systemEditorPreset = $event"
-                                                @update:userEditorMode="userEditorMode = $event"
-                                                @update:userEditorPreset="userEditorPreset = $event"
-                                                @open-mapping-studio="({ role, name }) => openMappingStudio(role, name)"
-                                            />
+                                        <ChainNodeOutputSection
+                                            :form="nodeForm"
+                                            @update:output-schema-definition="nodeForm.output_schema_definition = $event"
+                                            @update:stop-on-validation-error="nodeForm.stop_on_validation_error = $event"
+                                        />
+                                    </template>
+                                </ChainNodeSettingsPanel>
 
-                                            <ChainNodeOutputSection
-                                                :form="nodeForm"
-                                                @update:output-schema-definition="nodeForm.output_schema_definition = $event"
-                                                @update:stop-on-validation-error="nodeForm.stop_on_validation_error = $event"
-                                            />
-                                        </template>
-                                    </ChainNodeSettingsPanel>
-
-                                    <AvailableDataPanel
-                                        :open="showAvailableData"
-                                        :order-index="currentOrderIndex"
-                                        :search="availableDataSearch"
-                                        :tree="filteredAvailableDataTree"
-                                        @update:open="showAvailableData = $event"
-                                        @update:search="availableDataSearch = $event"
-                                        @select="insertPlaceholder"
-                                    />
-                                </div>
+                                <AvailableDataPanel
+                                    :open="showAvailableData"
+                                    :order-index="currentOrderIndex"
+                                    :search="availableDataSearch"
+                                    :tree="filteredAvailableDataTree"
+                                    @update:open="showAvailableData = $event"
+                                    @update:search="availableDataSearch = $event"
+                                    @select="insertPlaceholder"
+                                />
                             </div>
                         </div>
                     </div>

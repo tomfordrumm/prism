@@ -28,7 +28,10 @@ createInertiaApp({
             .use(ToastService)
             .use(PrimeVue, {
                 theme: {
-                    preset: Aura
+                    preset: Aura,
+                    options: {
+
+                    }
                 }
             })
             .mount(el);

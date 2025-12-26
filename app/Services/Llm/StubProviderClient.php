@@ -18,7 +18,7 @@ class StubProviderClient implements LlmProviderClientInterface
 
         $content = "Stub response from {$credential->provider} ({$modelName}).\nInput:\n".$joined;
 
-        return new LlmResponseDto($content, usage: ['tokens_in' => null, 'tokens_out' => null], raw: []);
+        return new LlmResponseDto($content, usage: ['tokens_in' => null, 'tokens_out' => null], raw: [], meta: []);
     }
 
     public function listModels(ProviderCredential $credential): array

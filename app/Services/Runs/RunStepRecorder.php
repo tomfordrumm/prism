@@ -23,6 +23,7 @@ class RunStepRecorder
         ?int $providerCredentialId = null
     ): void {
         $usage = $responseDto ? $responseDto->usage : [];
+        $meta = $responseDto ? $responseDto->meta : [];
 
         RunStep::create([
             'tenant_id' => currentTenantId(),
@@ -41,6 +42,8 @@ class RunStepRecorder
             'tokens_in' => $usage['tokens_in'] ?? null,
             'tokens_out' => $usage['tokens_out'] ?? null,
             'duration_ms' => $durationMs,
+            'retry_count' => $meta['retry_count'] ?? null,
+            'retry_reasons' => $meta['retry_reasons'] ?? null,
             'validation_errors' => $validationErrors ?: null,
             'status' => $status,
         ]);
