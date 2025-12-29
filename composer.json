@@ -11,6 +11,7 @@
     "require": {
         "php": "^8.2",
         "anthropic-ai/sdk": "^0.4.0",
+        "binarytorch/larecipe": "^2.8",
         "google-gemini-php/laravel": "^2.0",
         "inertiajs/inertia-laravel": "^2.0",
         "laravel/fortify": "^1.30",

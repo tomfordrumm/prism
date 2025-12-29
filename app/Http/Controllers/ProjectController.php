@@ -112,7 +112,10 @@ class ProjectController extends Controller
                 'title' => 'Prompt updated',
                 'description' => sprintf('%s v%s', $version->promptTemplate->name, $version->version),
                 'timestamp' => $this->formatTimestamp($version->created_at),
-                'href' => route('projects.prompts.show', [$project, $version->promptTemplate]),
+                'href' => route('projects.prompts.index', [
+                    $project,
+                    'prompt_id' => $version->promptTemplate->id,
+                ]),
             ]);
         }
 

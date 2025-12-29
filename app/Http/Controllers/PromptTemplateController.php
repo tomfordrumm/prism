@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\PromptTemplates\StorePromptTemplateRequest;
 use App\Http\Requests\PromptTemplates\StorePromptVersionRequest;
+use App\Http\Requests\PromptTemplates\UpdatePromptTemplateRequest;
 use App\Models\ProviderCredential;
 use App\Models\Project;
 use App\Models\PromptVersion;
@@ -107,11 +108,9 @@ class PromptTemplateController extends Controller
         ]);
     }
 
-    public function create(Project $project): Response
+    public function create(Project $project): RedirectResponse
     {
-        return Inertia::render('projects/prompts/Create', [
-            'project' => $project->only(['id', 'uuid', 'name', 'description']),
-        ]);
+        return redirect()->route('projects.prompts.index', [$project, 'prompt_id' => $template->id]);
     }
 
     public function store(StorePromptTemplateRequest $request, Project $project): RedirectResponse
@@ -134,55 +133,36 @@ class PromptTemplateController extends Controller
         return redirect()->route('projects.prompts.index', [$project, 'prompt_id' => $template->id]);
     }
 
-    public function show(Project $project, PromptTemplate $promptTemplate): Response
+    public function update(
+        UpdatePromptTemplateRequest $request,
+        Project $project,
+        PromptTemplate $promptTemplate
+    ): RedirectResponse {
+        $this->assertProjectTenant($project);
+        $this->assertTemplateProject($promptTemplate, $project);
+
+        $promptTemplate->update([
+            'name' => $request->string('name'),
+            'description' => $request->input('description'),
+        ]);
+
+        return redirect()->route('projects.prompts.index', [$project, 'prompt_id' => $promptTemplate->id]);
+    }
+
+    public function show(Project $project, PromptTemplate $promptTemplate): RedirectResponse
     {
         $this->assertProjectTenant($project);
         $this->assertTemplateProject($promptTemplate, $project);
 
-        $promptTemplate->load(['promptVersions' => function ($query) {
-            $query->orderByDesc('version');
-        }]);
-
-        /** @var \Illuminate\Database\Eloquent\Collection<int, PromptVersion> $promptVersions */
-        $promptVersions = $promptTemplate->promptVersions;
-
         $requestedVersion = request()->integer('version');
-        /** @var PromptVersion|null $selectedVersion */
-        $selectedVersion = $promptVersions
-            ->firstWhere('version', $requestedVersion)
-            ?? $promptVersions->first();
+        $params = [
+            'prompt_id' => $promptTemplate->id,
+        ];
+        if ($requestedVersion) {
+            $params['version'] = $requestedVersion;
+        }
 
-        $providerCredentials = $this->providerCredentials();
-
-        return Inertia::render('projects/prompts/Show', [
-            'project' => $project->only(['id', 'uuid', 'name', 'description']),
-            'template' => [
-                'id' => $promptTemplate->id,
-                'name' => $promptTemplate->name,
-                'description' => $promptTemplate->description,
-                'variables' => $promptTemplate->variables,
-            ],
-            'versions' => $promptVersions->map(function (PromptVersion $version): array {
-                return [
-                    'id' => $version->id,
-                    'version' => $version->version,
-                    'changelog' => $version->changelog,
-                    'created_at' => $version->created_at,
-                    'content' => $version->content,
-                ];
-            }),
-            'selectedVersion' => $selectedVersion
-                ? [
-                    'id' => $selectedVersion->id,
-                    'version' => $selectedVersion->version,
-                    'changelog' => $selectedVersion->changelog,
-                    'created_at' => $selectedVersion->created_at,
-                    'content' => $selectedVersion->content,
-                ]
-                : null,
-            'providerCredentials' => $this->providerCredentialOptions($providerCredentials),
-            'providerCredentialModels' => $this->providerCredentialModels($providerCredentials),
-        ]);
+        return redirect()->route('projects.prompts.index', [$project, $params]);
     }
 
     public function storeVersion(

@@ -56,7 +56,10 @@ class PromptVersionFromFeedbackController extends Controller
             ]);
         });
 
-        return redirect()->route('projects.prompts.show', [$project, $promptTemplate]);
+        return redirect()->route('projects.prompts.index', [
+            $project,
+            'prompt_id' => $promptTemplate->id,
+        ]);
     }
 
     private function assertTemplateProject(PromptTemplate $template, Project $project): void

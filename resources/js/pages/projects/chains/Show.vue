@@ -12,7 +12,7 @@ import ChainTimeline from '@/components/chains/ChainTimeline.vue';
 import AvailableDataPanel from '@/components/chains/AvailableDataPanel.vue';
 import VariableMappingStudio from '@/components/chains/VariableMappingStudio.vue';
 import ChainDescriptionModal from '@/components/chains/ChainDescriptionModal.vue';
-import RunChainModal from '@/components/chains/RunChainModal.vue';
+import ChainRunPanel from '@/components/chains/ChainRunPanel.vue';
 import ProviderCredentialModal from '@/components/providers/ProviderCredentialModal.vue';
 import ChainNodeOutputSection from '@/components/chains/node/ChainNodeOutputSection.vue';
 import ChainNodePromptConfig from '@/components/chains/node/ChainNodePromptConfig.vue';
@@ -22,8 +22,8 @@ import ChainHeader from '@/components/chains/ChainHeader.vue';
 import ChainNodeEditorHeader from '@/components/chains/node/ChainNodeEditorHeader.vue';
 import { useAvailableDataTree } from '@/composables/useAvailableDataTree';
 import { useChainNodeForm } from '@/composables/useChainNodeForm';
+import { useMappingDragDrop } from '@/composables/useMappingDragDrop';
 import { useVariableMapping } from '@/composables/useVariableMapping';
-import type { PrimeTreeNode } from '@/composables/useAvailableDataTree';
 import type {
     ChainNodePayload,
     ContextSample,
@@ -173,7 +173,6 @@ const saveDescription = () => {
 const sortedNodes = computed(() => [...props.nodes].sort((a, b) => a.order_index - b.order_index));
 const activeNodeId = ref<number | 'new' | 'input' | 'output' | null>(null);
 const hasProviderCredentials = computed(() => props.providerCredentials.length > 0);
-const hasDatasets = computed(() => props.datasets.length > 0);
 const promptModeOptions = [
     { label: 'Template', value: 'template' },
     { label: 'Custom', value: 'inline' },
@@ -185,85 +184,6 @@ const { filteredAvailableDataTree, filteredStudioDataTree, previousSteps } = use
     availableDataSearch,
     mappingStudioSearch,
 });
-
-const insertPlaceholder = (path: string) => {
-    const placeholder = `{{${path}}}`;
-    const active = document.activeElement as HTMLTextAreaElement | HTMLInputElement | null;
-
-    if (active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT')) {
-        const start = active.selectionStart ?? active.value.length;
-        const end = active.selectionEnd ?? active.value.length;
-        const value = active.value;
-        active.value = value.slice(0, start) + placeholder + value.slice(end);
-        active.dispatchEvent(new Event('input', { bubbles: true }));
-        active.focus();
-        active.selectionStart = active.selectionEnd = start + placeholder.length;
-        return;
-    }
-
-    navigator.clipboard.writeText(placeholder).catch(() => {});
-};
-
-const onStudioTreeSelect = (event: { node: PrimeTreeNode }) => {
-    const path = event.node?.data?.path;
-    if (!path || !mappingTarget.value) return;
-
-    applyMappingText(mappingTarget.value.role, mappingTarget.value.name, path);
-    const key = `${mappingTarget.value.role}:${mappingTarget.value.name}`;
-    mappingFlashKey.value = key;
-    window.setTimeout(() => {
-        if (mappingFlashKey.value === key) {
-            mappingFlashKey.value = null;
-        }
-    }, 450);
-};
-
-const handleTreeDragStart = (event: DragEvent, path?: string) => {
-    if (!path || !event.dataTransfer) return;
-    event.dataTransfer.setData('text/plain', path);
-    event.dataTransfer.setData('text', path);
-    event.dataTransfer.effectAllowed = 'copy';
-
-    const ghost = document.createElement('div');
-    ghost.textContent = path;
-    ghost.style.fontSize = '12px';
-    ghost.style.fontFamily = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
-    ghost.style.padding = '4px 8px';
-    ghost.style.background = 'rgba(15, 23, 42, 0.85)';
-    ghost.style.color = 'white';
-    ghost.style.borderRadius = '6px';
-    ghost.style.position = 'absolute';
-    ghost.style.top = '-9999px';
-    ghost.style.left = '-9999px';
-    document.body.appendChild(ghost);
-    event.dataTransfer.setDragImage(ghost, 0, 0);
-    window.setTimeout(() => ghost.remove(), 0);
-};
-
-const handleMappingDrop = (
-    event: DragEvent,
-    role: 'system' | 'user',
-    name: string,
-) => {
-    event.preventDefault();
-    const path = event.dataTransfer?.getData('text/plain') ?? '';
-    if (!path) return;
-
-    mappingTarget.value = { role, name };
-    applyMappingText(role, name, path);
-    const key = `${role}:${name}`;
-    mappingFlashKey.value = key;
-    window.setTimeout(() => {
-        if (mappingFlashKey.value === key) {
-            mappingFlashKey.value = null;
-        }
-    }, 450);
-};
-
-const copyPath = (path?: string) => {
-    if (!path) return;
-    navigator.clipboard.writeText(path).catch(() => {});
-};
 
 const timelineItems = computed(() => {
     const items: Array<{
@@ -290,8 +210,6 @@ const timelineItems = computed(() => {
 
     return items;
 });
-const mappingFlashKey = ref<string | null>(null);
-
 const {
     mappingTarget,
     variableRowsSystem,
@@ -305,6 +223,18 @@ const {
     nodeForm,
     systemPromptText,
     userPromptText,
+});
+
+const {
+    mappingFlashKey,
+    insertPlaceholder,
+    onStudioTreeSelect,
+    handleTreeDragStart,
+    handleMappingDrop,
+    copyPath,
+} = useMappingDragDrop({
+    mappingTarget,
+    applyMappingText,
 });
 
 const openMappingStudio = (role?: 'system' | 'user', name?: string) => {
@@ -500,168 +430,7 @@ const submitProviderCredential = () => {
 };
 
 const runModalOpen = ref(false);
-const runMode = ref<'manual' | 'dataset'>('manual');
-const runForm = useForm({
-    input: '{}',
-});
-const runDatasetForm = useForm({
-    dataset_id: (props.datasets[0]?.value as number) ?? null,
-});
 
-const normalizeInputPath = (path: string) => {
-    const trimmed = path.trim();
-    if (!trimmed) return '';
-    const normalized = trimmed.replace(/\[(.*?)\]/g, '.$1');
-    return normalized.replace(/^input\./, '').replace(/^\.*/, '');
-};
-
-const parseInputValue = (raw: string) => {
-    const trimmed = raw.trim();
-    if (trimmed === '') return '';
-    if (trimmed === 'true') return true;
-    if (trimmed === 'false') return false;
-    if (trimmed === 'null') return null;
-    if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
-    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
-        try {
-            return JSON.parse(trimmed) as unknown;
-        } catch {
-            return raw;
-        }
-    }
-    return raw;
-};
-
-const setNestedValue = (target: Record<string, unknown>, path: string, value: unknown) => {
-    if (!path) return;
-    const parts = path.split('.').filter(Boolean);
-    let cursor: Record<string, unknown> = target;
-
-    parts.forEach((part, index) => {
-        if (index === parts.length - 1) {
-            cursor[part] = value;
-            return;
-        }
-
-        if (!cursor[part] || typeof cursor[part] !== 'object') {
-            cursor[part] = {};
-        }
-
-        cursor = cursor[part] as Record<string, unknown>;
-    });
-};
-
-const inputFields = computed(() => {
-    const fields = new Map<string, string>();
-
-    nodes.value.forEach((node) => {
-        (node.messages_config || []).forEach((message) => {
-            const variables = message.variables;
-            if (!variables || Array.isArray(variables) || typeof variables !== 'object') {
-                return;
-            }
-
-            Object.entries(variables).forEach(([name, mapping]) => {
-                if (!mapping || mapping.source !== 'input') {
-                    return;
-                }
-
-                const rawPath = mapping.path && mapping.path.length ? mapping.path : name;
-                const path = normalizeInputPath(rawPath);
-                if (!path) return;
-
-                if (!fields.has(path)) {
-                    fields.set(path, name);
-                }
-            });
-        });
-    });
-
-    return Array.from(fields.entries()).map(([path, name]) => ({ path, name }));
-});
-
-const manualInputValues = ref<Record<string, string>>({});
-
-watch(
-    inputFields,
-    (fields) => {
-        const next: Record<string, string> = { ...manualInputValues.value };
-        const fieldPaths = new Set(fields.map((field) => field.path));
-
-        fields.forEach((field) => {
-            if (!(field.path in next)) {
-                next[field.path] = '';
-            }
-        });
-
-        Object.keys(next).forEach((key) => {
-            if (!fieldPaths.has(key)) {
-                delete next[key];
-            }
-        });
-
-        manualInputValues.value = next;
-    },
-    { immediate: true },
-);
-
-const updateRunInput = () => {
-    if (!inputFields.value.length) return;
-    const payload: Record<string, unknown> = {};
-
-    inputFields.value.forEach((field) => {
-        const value = parseInputValue(manualInputValues.value[field.path] ?? '');
-        setNestedValue(payload, field.path, value);
-    });
-
-    runForm.input = JSON.stringify(payload, null, 2);
-};
-
-watch(manualInputValues, updateRunInput, { deep: true });
-watch(inputFields, updateRunInput);
-
-const missingManualInputs = computed(() =>
-    inputFields.value.filter((field) => !(manualInputValues.value[field.path] ?? '').trim()),
-);
-
-watch(
-    missingManualInputs,
-    (missing) => {
-        if (!missing.length) {
-            runForm.clearErrors('input');
-        }
-    },
-    { immediate: true },
-);
-
-const submitRun = () => {
-    if (runMode.value === 'dataset') {
-        if (!runDatasetForm.dataset_id) {
-            runDatasetForm.setError('dataset_id', 'Select a dataset');
-            return;
-        }
-
-        runDatasetForm.post(`/projects/${props.project.uuid}/chains/${props.chain.id}/run-dataset`, {
-            preserveScroll: true,
-            onSuccess: () => {
-                runModalOpen.value = false;
-            },
-        });
-        return;
-    }
-
-    if (inputFields.value.length && missingManualInputs.value.length) {
-        runForm.setError('input', 'Fill all required inputs before running.');
-        return;
-    }
-
-    runForm.post(`/projects/${props.project.uuid}/chains/${props.chain.id}/run`, {
-        preserveScroll: true,
-        onSuccess: () => {
-            runModalOpen.value = false;
-        },
-    });
-};
 </script>
 
 <template>
@@ -841,19 +610,12 @@ const submitRun = () => {
         @save="saveDescription"
     />
 
-    <RunChainModal
+    <ChainRunPanel
         v-model:open="runModalOpen"
-        v-model:runMode="runMode"
-        :run-form="runForm"
-        :run-dataset-form="runDatasetForm"
+        :project-uuid="props.project.uuid"
+        :chain-id="props.chain.id"
+        :nodes="nodes"
         :datasets="props.datasets"
-        :has-datasets="hasDatasets"
-        :input-fields="inputFields"
-        :input-values="manualInputValues"
-        @update:input="runForm.input = $event"
-        @update:input-value="({ path, value }) => { manualInputValues[path] = value; }"
-        @update:dataset-id="runDatasetForm.dataset_id = $event"
-        @submit="submitRun"
     />
 
 </template>

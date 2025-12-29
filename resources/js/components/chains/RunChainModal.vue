@@ -26,16 +26,29 @@ interface InputField {
     name: string;
 }
 
-defineProps<{
+const props = withDefaults(defineProps<{
     open: boolean;
+    title?: string;
+    description?: string;
     runMode: 'manual' | 'dataset';
     runForm: RunForm;
-    runDatasetForm: RunDatasetForm;
-    datasets: Option[];
-    hasDatasets: boolean;
+    runDatasetForm?: RunDatasetForm;
+    datasets?: Option[];
+    hasDatasets?: boolean;
     inputFields: InputField[];
     inputValues: Record<string, string>;
-}>();
+    showRunModeToggle?: boolean;
+    showDataset?: boolean;
+    canSubmit?: boolean;
+}>(), {
+    title: 'Run chain',
+    description: 'Provide input manually or run against a dataset.',
+    datasets: () => [],
+    hasDatasets: false,
+    showRunModeToggle: true,
+    showDataset: true,
+    canSubmit: true,
+});
 
 const emit = defineEmits<{
     (event: 'update:open', value: boolean): void;
@@ -51,11 +64,11 @@ const emit = defineEmits<{
     <Dialog :open="open" @update:open="emit('update:open', $event)">
         <DialogContent class="sm:max-w-xl">
             <DialogHeader>
-                <DialogTitle>Run chain</DialogTitle>
-                <DialogDescription>Provide input manually or run against a dataset.</DialogDescription>
+                <DialogTitle>{{ props.title }}</DialogTitle>
+                <DialogDescription v-if="props.description">{{ props.description }}</DialogDescription>
             </DialogHeader>
 
-            <div class="flex items-center gap-2 rounded-md border border-border p-1 text-sm">
+            <div v-if="props.showRunModeToggle" class="flex items-center gap-2 rounded-md border border-border p-1 text-sm">
                 <Button
                     variant="ghost"
                     size="sm"
@@ -75,6 +88,7 @@ const emit = defineEmits<{
             </div>
 
             <div v-if="runMode === 'manual'" class="space-y-3">
+                <slot name="before-input" />
                 <div v-if="inputFields.length" class="grid gap-3">
                     <div v-for="field in inputFields" :key="field.path" class="grid gap-2">
                         <Label :for="`run_input_${field.path}`">{{ field.path }}</Label>
@@ -113,7 +127,7 @@ const emit = defineEmits<{
                 </div>
             </div>
 
-            <div v-else class="space-y-3">
+            <div v-else-if="props.showDataset && runDatasetForm" class="space-y-3">
                 <div class="grid gap-2">
                     <Label for="dataset_id">Dataset</Label>
                     <select
@@ -124,22 +138,22 @@ const emit = defineEmits<{
                         @change="emit('update:dataset-id', ($event.target as HTMLSelectElement).value ? Number(($event.target as HTMLSelectElement).value) : null)"
                     >
                         <option value="">Select dataset</option>
-                        <option v-for="dataset in datasets" :key="dataset.value" :value="dataset.value">
+                        <option v-for="dataset in props.datasets" :key="dataset.value" :value="dataset.value">
                             {{ dataset.label }}
                         </option>
                     </select>
                     <InputError :message="runDatasetForm.errors.dataset_id" />
-                    <p v-if="!hasDatasets" class="text-xs text-muted-foreground">No datasets available.</p>
+                    <p v-if="!props.hasDatasets" class="text-xs text-muted-foreground">No datasets available.</p>
                 </div>
             </div>
 
             <DialogFooter class="flex items-center justify-end gap-2">
                 <Button variant="outline" @click="emit('update:open', false)">Cancel</Button>
                 <Button
-                    :disabled="runMode === 'dataset' ? runDatasetForm.processing : runForm.processing"
+                    :disabled="(runMode === 'dataset' && runDatasetForm ? runDatasetForm.processing : runForm.processing) || !props.canSubmit"
                     @click="emit('submit')"
                 >
-                    {{ runMode === 'dataset' ? 'Run on dataset' : 'Run' }}
+                    {{ runMode === 'dataset' && props.showDataset ? 'Run on dataset' : 'Run' }}
                 </Button>
             </DialogFooter>
         </DialogContent>

@@ -108,7 +108,7 @@ const formatNumber = (value: number) => value.toLocaleString();
                 </div>
                 <div class="mt-4 grid gap-3 md:grid-cols-3">
                     <Link
-                        :href="promptRoutes.create({ project: project.uuid }).url"
+                        :href="promptRoutes.index({ project: project.uuid }).url"
                         class="group rounded-lg border border-border bg-background p-4 transition hover:border-primary"
                     >
                         <p class="text-xs uppercase text-muted-foreground">Prompt</p>

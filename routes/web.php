@@ -34,9 +34,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/projects/{project}', [ProjectController::class, 'show'])->name('projects.show');
     Route::prefix('/projects/{project}')->group(function () {
         Route::get('/prompts', [PromptTemplateController::class, 'index'])->name('projects.prompts.index');
-        Route::get('/prompts/create', [PromptTemplateController::class, 'create'])->name('projects.prompts.create');
         Route::post('/prompts', [PromptTemplateController::class, 'store'])->name('projects.prompts.store');
-        Route::get('/prompts/{promptTemplate}', [PromptTemplateController::class, 'show'])->name('projects.prompts.show');
+        Route::put('/prompts/{promptTemplate}', [PromptTemplateController::class, 'update'])->name('projects.prompts.update');
         Route::post('/prompts/{promptTemplate}/versions', [PromptTemplateController::class, 'storeVersion'])->name('projects.prompts.versions.store');
         Route::post('/prompts/{promptTemplate}/run', [PromptRunController::class, 'store'])->name('projects.prompts.run');
 

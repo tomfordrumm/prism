@@ -3,10 +3,11 @@ import ProjectLayout from '@/layouts/app/ProjectLayout.vue';
 import prompts from '@/routes/projects/prompts';
 import promptVersions from '@/routes/projects/prompts/versions';
 import { router, useForm } from '@inertiajs/vue3';
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, toRefs, watch } from 'vue';
 
 import InputError from '@/components/InputError.vue';
 import PromptEditor from '@/components/PromptEditor.vue';
+import PromptRunPanel from '@/components/prompts/PromptRunPanel.vue';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
@@ -23,7 +24,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Spinner } from '@/components/ui/spinner';
 
 interface ProjectPayload {
     id: number;
@@ -81,6 +81,7 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+const { providerCredentials, providerCredentialModels } = toRefs(props);
 
 const selectedTemplateId = ref<number | string | null>(
     props.selectedTemplate?.id ?? props.templates[0]?.id ?? null,
@@ -128,6 +129,14 @@ const selectedTemplate = computed(() => {
 });
 
 const isDraftSelected = computed(() => Boolean(activeDraft.value));
+const templateNameEditing = ref(false);
+const templateNameInputRef = ref<HTMLInputElement | null>(null);
+const templateNameBeforeEdit = ref('');
+
+const templateForm = useForm({
+    name: '',
+    description: '',
+});
 
 const templateVersions = computed(() =>
     selectedTemplate.value && !isDraftSelected.value ? props.versions : [],
@@ -189,7 +198,6 @@ const createDraft = () => {
     selectedTemplateId.value = draft.id;
     selectedVersion.value = null;
     editorContent.value = '';
-    runForm.variables = defaultVariables.value;
     showSaveMenu.value = false;
     showVariables.value = false;
     showVersions.value = false;
@@ -219,79 +227,37 @@ const versionForm = useForm({
     changelog: '',
 });
 
-const defaultVariables = computed(() => {
-    if (!selectedTemplate.value?.variables || !selectedTemplate.value.variables.length) return '{}';
-    const vars: Record<string, unknown> = {};
-    selectedTemplate.value.variables.forEach((v) => {
-        vars[v.name] = '';
-    });
-
-    return JSON.stringify(vars, null, 2);
-});
-
-const runForm = useForm({
-    provider_credential_id: props.providerCredentials[0]?.value ?? null,
-    model_name: '',
-    variables: defaultVariables.value,
-});
-
-const modelOptions = computed(() => {
-    const credentialId = runForm.provider_credential_id;
-    if (!credentialId) return [];
-
-    return props.providerCredentialModels[credentialId] ?? [];
-});
-
-const handleProviderChange = () => {
-    const firstModel = modelOptions.value[0];
-    runForm.model_name = firstModel ? firstModel.id : '';
-};
-
 const openRunModal = () => {
     if (!selectedTemplate.value || isDraftSelected.value) return;
-    handleProviderChange();
     showRunModal.value = true;
 };
 
-const submitRun = () => {
-    if (!selectedTemplate.value || isDraftSelected.value) return;
-
-    runForm.post(
-        `/projects/${props.project.uuid}/prompts/${selectedTemplate.value.id}/run`,
-        {
-            preserveScroll: true,
-            onSuccess: () => {
-                showRunModal.value = false;
-            },
-        }
-    );
-};
-
-const canRunPrompt = computed(
-    () =>
-        Boolean(selectedTemplate.value) &&
-        !isDraftSelected.value &&
-        Boolean(runForm.provider_credential_id) &&
-        Boolean(runForm.model_name) &&
-        props.providerCredentials.length > 0
+const canOpenRunModal = computed(
+    () => Boolean(selectedTemplate.value) && !isDraftSelected.value,
 );
 
 const submitVersion = () => {
     if (!selectedTemplate.value) return;
 
     if (isDraftSelected.value) {
+        const draftId = selectedTemplateId.value;
         versionForm
             .transform(() => ({
                 name: selectedTemplate.value?.name ?? `Prompt #${draftCounter.value}`,
                 description: null,
                 initial_content: editorContent.value,
-                initial_changelog: changelog.value || 'Initial version',
+                initial_changelog: 'Initial',
             }))
             .post(prompts.store({ project: props.project.uuid }).url, {
                 preserveScroll: true,
+                preserveState: false,
                 onSuccess: () => {
+                    if (typeof draftId === 'string') {
+                        drafts.value = drafts.value.filter((draft) => draft.id !== draftId);
+                    }
                     changelog.value = '';
                     showSaveMenu.value = false;
+                    selectedTemplateId.value = null;
                 },
             });
         return;
@@ -317,6 +283,63 @@ const submitVersion = () => {
         );
 };
 
+const startTemplateNameEdit = () => {
+    if (!selectedTemplate.value) return;
+    templateNameBeforeEdit.value = templateForm.name;
+    templateNameEditing.value = true;
+    nextTick(() => {
+        templateNameInputRef.value?.focus();
+        templateNameInputRef.value?.select();
+    });
+};
+
+const cancelTemplateNameEdit = () => {
+    templateForm.name = templateNameBeforeEdit.value;
+    templateNameEditing.value = false;
+};
+
+const commitTemplateName = () => {
+    if (!selectedTemplate.value) return;
+    const trimmed = templateForm.name.trim();
+    if (!trimmed) {
+        templateForm.name = templateNameBeforeEdit.value;
+        templateNameEditing.value = false;
+        return;
+    }
+
+    if (isDraftSelected.value) {
+        if (activeDraft.value) {
+            activeDraft.value.name = trimmed;
+        }
+        templateNameEditing.value = false;
+        return;
+    }
+
+    if (trimmed === templateNameBeforeEdit.value) {
+        templateNameEditing.value = false;
+        return;
+    }
+
+    templateForm.name = trimmed;
+    templateForm.put(`/projects/${props.project.uuid}/prompts/${selectedTemplate.value.id}`, {
+        preserveScroll: true,
+        onSuccess: () => {
+            templateNameEditing.value = false;
+        },
+    });
+};
+
+watch(
+    () => selectedTemplate.value,
+    (template) => {
+        if (!template) return;
+        templateForm.name = template.name ?? '';
+        templateForm.description = template.description ?? '';
+        templateNameEditing.value = false;
+    },
+    { immediate: true },
+);
+
 watch(
     () => props.selectedTemplate,
     (template) => {
@@ -328,7 +351,6 @@ watch(
             selectedTemplateId.value = template.id;
             selectedVersion.value = props.selectedVersion ?? props.versions[0] ?? null;
             editorContent.value = selectedVersion.value?.content ?? '';
-            runForm.variables = defaultVariables.value;
         }
     }
 );
@@ -355,10 +377,23 @@ watch(
 );
 
 watch(
-    () => runForm.provider_credential_id,
-    () => handleProviderChange(),
-    { immediate: true }
+    () => props.templates,
+    (templates) => {
+        if (!templates.length) return;
+        if (typeof selectedTemplateId.value === 'string' && !activeDraft.value) {
+            selectedTemplateId.value = templates[0]?.id ?? null;
+            return;
+        }
+        if (typeof selectedTemplateId.value === 'number') {
+            const exists = templates.some((template) => template.id === selectedTemplateId.value);
+            if (!exists) {
+                selectedTemplateId.value = templates[0]?.id ?? null;
+            }
+        }
+    },
+    { immediate: true },
 );
+
 </script>
 
 <template>
@@ -419,7 +454,26 @@ watch(
                     <div class="sticky top-0 z-10 border-b border-border/60 bg-white px-6 py-4">
                         <div class="flex flex-wrap items-center justify-between gap-3">
                             <div class="flex flex-wrap items-center gap-3">
-                                <h2 class="text-lg font-semibold text-foreground">{{ selectedTemplate.name }}</h2>
+                                <div class="flex items-center gap-2">
+                                    <button
+                                        v-if="!templateNameEditing"
+                                        type="button"
+                                        class="text-left"
+                                        @click="startTemplateNameEdit"
+                                    >
+                                        <h2 class="text-lg font-semibold text-foreground">{{ selectedTemplate.name }}</h2>
+                                    </button>
+                                    <input
+                                        v-else
+                                        ref="templateNameInputRef"
+                                        v-model="templateForm.name"
+                                        type="text"
+                                        class="h-9 w-[240px] rounded-md border border-input bg-background px-3 py-1 text-base text-foreground shadow-sm transition focus:outline-none focus:ring-1 focus:ring-primary md:text-sm"
+                                        @blur="commitTemplateName"
+                                        @keydown.enter.prevent="commitTemplateName"
+                                        @keydown.esc.prevent="cancelTemplateNameEdit"
+                                    />
+                                </div>
                                 <span v-if="selectedVersion" class="rounded-full border border-border/60 bg-muted px-2 py-0.5 text-xs text-muted-foreground">
                                     v{{ selectedVersion.version }}
                                 </span>
@@ -434,7 +488,15 @@ watch(
                                 </span>
                             </div>
                             <div class="flex items-center gap-2">
-                                <DropdownMenu v-if="hasChanges" v-model:open="showSaveMenu">
+                                <Button
+                                    v-if="hasChanges && isDraftSelected"
+                                    size="sm"
+                                    :disabled="versionForm.processing"
+                                    @click="submitVersion"
+                                >
+                                    {{ saveLabel }}
+                                </Button>
+                                <DropdownMenu v-else-if="hasChanges" v-model:open="showSaveMenu">
                                     <DropdownMenuTrigger as-child>
                                         <Button size="sm">{{ saveLabel }}</Button>
                                     </DropdownMenuTrigger>
@@ -475,11 +537,11 @@ watch(
                                 </DropdownMenu>
                                 <Button
                                     size="sm"
-                                    :disabled="!canRunPrompt"
+                                    :disabled="!canOpenRunModal"
                                     :variant="hasChanges ? 'outline' : 'default'"
                                     @click="openRunModal"
                                 >
-                                    <Spinner v-if="runForm.processing" class="mr-2" /> Run prompt
+                                    Run prompt
                                 </Button>
                                 <Button
                                     variant="outline"
@@ -550,72 +612,15 @@ watch(
             </DialogContent>
         </Dialog>
 
-        <Dialog :open="showRunModal" @update:open="showRunModal = $event">
-            <DialogContent class="sm:max-w-lg">
-                <DialogHeader>
-                    <DialogTitle>Run prompt (latest version)</DialogTitle>
-                    <DialogDescription>Execute the latest prompt version with your variables.</DialogDescription>
-                </DialogHeader>
-                <div class="space-y-4">
-                    <div class="grid gap-2">
-                        <Label for="run_provider_credential_id">Provider credential</Label>
-                        <select
-                            id="run_provider_credential_id"
-                            v-model.number="runForm.provider_credential_id"
-                            name="provider_credential_id"
-                            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                        >
-                            <option v-if="!providerCredentials.length" disabled :value="null">No credentials available</option>
-                            <option
-                                v-for="credential in providerCredentials"
-                                :key="credential.value"
-                                :value="credential.value"
-                            >
-                                {{ credential.label }}
-                            </option>
-                        </select>
-                        <InputError :message="runForm.errors.provider_credential_id" />
-                    </div>
-
-                    <div class="grid gap-2">
-                        <Label for="run_model_name">Model</Label>
-                        <select
-                            id="run_model_name"
-                            v-model="runForm.model_name"
-                            name="model_name"
-                            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                        >
-                            <option value="" disabled>Select model</option>
-                            <option v-for="model in modelOptions" :key="model.id" :value="model.id">
-                                {{ model.display_name }} ({{ model.name }})
-                            </option>
-                        </select>
-                        <p v-if="runForm.provider_credential_id && !modelOptions.length" class="text-xs text-muted-foreground">
-                            No models available for this credential yet.
-                        </p>
-                        <InputError :message="runForm.errors.model_name" />
-                    </div>
-
-                    <div class="grid gap-2">
-                        <Label for="run_variables">Variables (JSON)</Label>
-                        <textarea
-                            id="run_variables"
-                            v-model="runForm.variables"
-                            rows="6"
-                            class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                            placeholder='{"topic": "React hooks"}'
-                        ></textarea>
-                        <InputError :message="runForm.errors.variables" />
-                    </div>
-                </div>
-                <DialogFooter class="mt-4">
-                    <Button variant="outline" size="sm" @click="showRunModal = false">Cancel</Button>
-                    <Button size="sm" :disabled="runForm.processing || !canRunPrompt" @click="submitRun">
-                        <Spinner v-if="runForm.processing" class="mr-2" /> Run prompt
-                    </Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
+        <PromptRunPanel
+            v-if="selectedTemplate && !isDraftSelected"
+            v-model:open="showRunModal"
+            :project-uuid="props.project.uuid"
+            :prompt-template-id="selectedTemplate.id"
+            :variables="selectedTemplate.variables ?? []"
+            :provider-credentials="providerCredentials"
+            :provider-credential-models="providerCredentialModels"
+        />
 
         <Dialog :open="showVariables" @update:open="showVariables = $event">
             <DialogContent class="sm:max-w-md">
