@@ -24,6 +24,11 @@ export interface PromptDetails {
     prompt_version: number | null;
     content: string | null;
     variables: string[];
+    rating?: {
+        up: number;
+        down: number;
+        score: number;
+    } | null;
 }
 
 export interface InternalSchemaNode {

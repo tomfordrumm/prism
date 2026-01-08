@@ -59,6 +59,12 @@ const mainNavItems: NavItem[] = [
         icon: KeyRound,
         routeName: 'provider-credentials.index',
     },
+    {
+        title: 'System Settings',
+        href: '/settings/system',
+        icon: LayoutGrid,
+        routeName: 'settings.system.edit',
+    },
 ];
 
 const footerNavItems: NavItem[] = [

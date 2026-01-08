@@ -15,8 +15,8 @@ class StoreFeedbackRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'rating' => ['nullable', 'integer'],
-            'comment' => ['required', 'string'],
+            'rating' => ['nullable', 'integer', 'in:-1,1'],
+            'comment' => ['nullable', 'string', 'required_if:request_suggestion,true', 'required_without:rating'],
             'request_suggestion' => ['boolean'],
             'provider_credential_id' => [
                 'required_if:request_suggestion,true',
@@ -25,6 +25,12 @@ class StoreFeedbackRequest extends FormRequest
                     ->where('tenant_id', currentTenantId()),
             ],
             'model_name' => ['required_if:request_suggestion,true', 'string'],
+            'target_prompt_version_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('prompt_versions', 'id')
+                    ->where('tenant_id', currentTenantId()),
+            ],
         ];
     }
 

@@ -38,6 +38,7 @@ class RunStepRecorder
                 'messages' => $messages,
             ],
             'response_raw' => $responseDto ? $responseDto->raw : [],
+            'response_content' => $responseDto ? $responseDto->content : null,
             'parsed_output' => $parsedOutput,
             'tokens_in' => $usage['tokens_in'] ?? null,
             'tokens_out' => $usage['tokens_out'] ?? null,

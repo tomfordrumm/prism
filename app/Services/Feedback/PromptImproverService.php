@@ -4,6 +4,7 @@ namespace App\Services\Feedback;
 
 use App\Models\PromptVersion;
 use App\Models\ProviderCredential;
+use App\Models\Tenant;
 use App\Models\RunStep;
 use App\Services\Llm\LlmService;
 use App\Services\Prompts\PromptFileRenderer;
@@ -14,7 +15,8 @@ class PromptImproverService
 {
     public function __construct(
         private LlmService $llmService,
-        private PromptFileRenderer $promptFileRenderer
+        private PromptFileRenderer $promptFileRenderer,
+        private PromptImprovementParser $promptImprovementParser
     ) {
     }
 
@@ -25,7 +27,8 @@ class PromptImproverService
         ?int $providerCredentialId = null,
         ?string $modelName = null
     ): ?array {
-        $credential = $this->resolveCredential($providerCredentialId);
+        $defaults = $this->resolveTenantDefaults();
+        $credential = $this->resolveCredential($providerCredentialId ?? $defaults['provider_credential_id']);
 
         if (! $credential) {
             Log::warning('PromptImproverService: no judge credential found');
@@ -33,7 +36,7 @@ class PromptImproverService
             return null;
         }
 
-        $modelName = $modelName ?: config('llm.judge_model', 'gpt-5.1-mini');
+        $modelName = $modelName ?: $defaults['model_name'] ?: config('llm.judge_model', 'gpt-5.1-mini');
         $params = $this->judgeParams();
 
         $messages = $this->buildMessages($runStep, $targetPromptVersion, $comment);
@@ -41,7 +44,7 @@ class PromptImproverService
         try {
             $response = $this->llmService->call($credential, $modelName, $messages, $params);
 
-            return $this->extractImprovement($response->content);
+            return $this->promptImprovementParser->parse($response->content);
         } catch (\Throwable $e) {
             Log::error('PromptImproverService failed', [
                 'error' => $e->getMessage(),
@@ -108,6 +111,16 @@ class PromptImproverService
         return $query->first();
     }
 
+    private function resolveTenantDefaults(): array
+    {
+        $tenant = Tenant::query()->find(currentTenantId());
+
+        return [
+            'provider_credential_id' => $tenant?->improvement_provider_credential_id,
+            'model_name' => $tenant?->improvement_model_name,
+        ];
+    }
+
     private function judgeParams(): array
     {
         $params = config('llm.judge_params', []);
@@ -168,31 +181,5 @@ class PromptImproverService
         }
 
         return '';
-    }
-
-    private function extractImprovement(string $content): ?array
-    {
-        $analysis = null;
-        $suggestion = null;
-
-        $decoded = json_decode($content, true);
-
-        if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-            $analysis = $decoded['analysis'] ?? null;
-            $suggestion = $decoded['improved_prompt'] ?? $decoded['improved prompt'] ?? null;
-        }
-
-        if (! $suggestion && ! $analysis) {
-            $suggestion = $content;
-        }
-
-        if ($suggestion === null && $analysis === null) {
-            return null;
-        }
-
-        return [
-            'suggestion' => $suggestion,
-            'analysis' => $analysis,
-        ];
     }
 }

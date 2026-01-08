@@ -13,10 +13,6 @@ interface Props {
 
 const props = defineProps<Props>();
 
-const emit = defineEmits<{
-    (event: 'request-feedback', stepId: number): void;
-}>();
-
 const { highlightFinalResult } = useRunHighlighting();
 const copiedResult = ref(false);
 
@@ -38,9 +34,28 @@ const coerceContentText = (value: unknown): string | null => {
 };
 
 const finalContent = (step: RunStepPayload) => {
+    if (step.response_content) {
+        return step.response_content;
+    }
+
     const raw = step.response_raw;
     if (!isRecord(raw)) {
         return jsonPretty(raw ?? {});
+    }
+
+    const candidates = raw.candidates;
+    if (Array.isArray(candidates)) {
+        const firstCandidate = candidates[0];
+        if (isRecord(firstCandidate)) {
+            const content = firstCandidate.content;
+            const parts = isRecord(content) ? content.parts : null;
+            if (Array.isArray(parts)) {
+                const textParts = parts
+                    .map((part) => (isRecord(part) ? part.text : null))
+                    .filter((text) => typeof text === 'string' && text.length > 0);
+                if (textParts.length) return textParts.join('');
+            }
+        }
     }
 
     const choices = raw.choices;
@@ -125,14 +140,6 @@ const handleCopy = async (text: string) => {
                     aria-label="Copy final result"
                 >
                     <Icon name="copy" class="h-3.5 w-3.5 text-muted-foreground" />
-                </Button>
-                <Button
-                    size="small"
-                    :disabled="!finalStep"
-                    @click="finalStep && emit('request-feedback', finalStep.id)"
-                    aria-label="Request improvement"
-                >
-                    <Icon name="sparkles" class="h-3.5 w-3.5 text-muted-foreground" />
                 </Button>
                 <span v-if="copiedResult" class="text-emerald-600">Copied!</span>
             </div>

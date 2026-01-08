@@ -33,7 +33,8 @@ class PromptVersionFromFeedbackController extends Controller
             abort(422, 'Feedback does not contain suggestion.');
         }
 
-        $targetPromptVersionId = $targetPromptResolver->fromRunStep($feedback->runStep);
+        $targetPromptVersionId = $feedback->target_prompt_version_id
+            ?: $targetPromptResolver->fromRunStep($feedback->runStep);
 
         $targetVersion = $targetPromptVersionId
             ? PromptVersion::find($targetPromptVersionId)

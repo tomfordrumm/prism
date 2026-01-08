@@ -23,6 +23,13 @@ export interface RunFeedbackItem {
     comment?: string | null;
     suggested_prompt_content?: string | null;
     analysis?: string | null;
+    target_prompt_version_id?: number | null;
+}
+
+export interface RunPromptTarget {
+    prompt_version_id: number | null;
+    prompt_template_id: number | null;
+    content: string | null;
 }
 
 export interface RunStepPayload {
@@ -33,8 +40,13 @@ export interface RunStepPayload {
     target_prompt_version_id?: number | null;
     target_prompt_template_id?: number | null;
     target_prompt_content?: string | null;
+    prompt_targets?: {
+        system: RunPromptTarget | null;
+        user: RunPromptTarget | null;
+    };
     request_payload: Record<string, unknown>;
     response_raw: Record<string, unknown>;
+    response_content?: string | null;
     parsed_output: unknown;
     tokens_in?: number | null;
     tokens_out?: number | null;
@@ -84,4 +96,9 @@ export interface RunModelOption {
     id: string;
     name: string;
     display_name: string;
+}
+
+export interface RunImprovementDefaults {
+    provider_credential_id: number | null;
+    model_name: string | null;
 }

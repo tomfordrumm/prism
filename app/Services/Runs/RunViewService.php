@@ -9,6 +9,7 @@ use App\Models\Project;
 use App\Models\Run;
 use App\Models\RunStep;
 use App\Models\TestCase;
+use App\Models\Tenant;
 use App\Models\PromptVersion;
 use App\Services\Llm\ModelCatalog;
 use App\Support\Presenters\RunStepPresenter;
@@ -77,12 +78,17 @@ class RunViewService
     {
         $details = $this->runDetails($project, $run);
         $providerCredentials = $this->providerCredentials();
+        $tenant = Tenant::query()->find(currentTenantId());
 
         return [
             ...$details,
             'runHistory' => $this->runHistory($project, $run),
             'providerCredentials' => $this->providerCredentialOptions($providerCredentials),
             'providerCredentialModels' => $this->providerCredentialModels($providerCredentials),
+            'improvementDefaults' => [
+                'provider_credential_id' => $tenant?->improvement_provider_credential_id,
+                'model_name' => $tenant?->improvement_model_name,
+            ],
         ];
     }
 
@@ -100,7 +106,12 @@ class RunViewService
         /** @var \Illuminate\Database\Eloquent\Collection<int, RunStep> $stepsCollection */
         $stepsCollection = $run->steps;
 
-        $targetPromptVersionIds = $this->targetPromptResolver->collectTargetVersionIds($stepsCollection);
+        $snapshot = is_array($run->chain_snapshot) ? $run->chain_snapshot : [];
+
+        $targetPromptVersionIds = $this->targetPromptResolver->collectTargetVersionIdsFromSnapshot($snapshot);
+        if (! $targetPromptVersionIds) {
+            $targetPromptVersionIds = $this->targetPromptResolver->collectTargetVersionIds($stepsCollection);
+        }
 
         $promptVersions = PromptVersion::query()
             ->whereIn('id', $targetPromptVersionIds)
@@ -113,7 +124,6 @@ class RunViewService
         $dataset = $run->dataset;
         /** @var TestCase|null $testCase */
         $testCase = $run->testCase;
-        $snapshot = is_array($run->chain_snapshot) ? $run->chain_snapshot : [];
         $snapshotName = is_array($snapshot) && isset($snapshot[0]['name']) ? $snapshot[0]['name'] : null;
 
         return [
@@ -143,7 +153,7 @@ class RunViewService
                 'created_at' => $run->created_at,
                 'finished_at' => $run->finished_at,
             ],
-            'steps' => $this->presentSteps($stepsCollection, $promptVersions),
+            'steps' => $this->presentSteps($stepsCollection, $promptVersions, $snapshot),
         ];
     }
 
@@ -151,10 +161,10 @@ class RunViewService
      * @param \Illuminate\Database\Eloquent\Collection<int, RunStep> $steps
      * @param Collection<int, PromptVersion> $promptVersions
      */
-    private function presentSteps(Collection $steps, Collection $promptVersions): array
+    private function presentSteps(Collection $steps, Collection $promptVersions, array $snapshot): array
     {
         return $steps
-            ->map(fn (RunStep $step): array => $this->runStepPresenter->present($step, $promptVersions))
+            ->map(fn (RunStep $step): array => $this->runStepPresenter->present($step, $promptVersions, $snapshot))
             ->values()
             ->all();
     }

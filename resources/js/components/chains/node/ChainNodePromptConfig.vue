@@ -34,6 +34,8 @@ const props = defineProps<{
     variableRowsSystem: VariableRow[];
     variableRowsUser: VariableRow[];
     variablesMissingMapping: { system: string[]; user: string[] };
+    systemRating?: { up: number; down: number; score: number } | null;
+    userRating?: { up: number; down: number; score: number } | null;
 }>();
 
 const emit = defineEmits<{
@@ -64,6 +66,7 @@ const openMappingStudio = (role: 'system' | 'user', name: string) => {
             <ChainNodePromptSection
                 title="System prompt"
                 role="system"
+                :rating="systemRating ?? null"
                 :prompt-mode-options="promptModeOptions"
                 :template-options="templateOptions"
                 :version-options="systemVersionOptions"
@@ -99,6 +102,7 @@ const openMappingStudio = (role: 'system' | 'user', name: string) => {
             <ChainNodePromptSection
                 title="User prompt"
                 role="user"
+                :rating="userRating ?? null"
                 :prompt-mode-options="promptModeOptions"
                 :template-options="userTemplateOptions"
                 :version-options="userVersionOptions"

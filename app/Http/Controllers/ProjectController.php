@@ -46,6 +46,8 @@ class ProjectController extends Controller
         $lastMonthTokens = $project->runs()
             ->where('created_at', '>=', now()->subMonth())
             ->sum(DB::raw('coalesce(total_tokens_in, 0) + coalesce(total_tokens_out, 0)'));
+        $promptChart = $this->promptChart($project);
+        $tokenChart = $this->tokenChart($project);
 
         return Inertia::render('projects/Show', [
             'project' => $project->only([
@@ -58,8 +60,69 @@ class ProjectController extends Controller
                 'runs_count',
             ]),
             'lastMonthTokens' => (int) $lastMonthTokens,
+            'promptChart' => $promptChart,
+            'tokenChart' => $tokenChart,
             'recentActivity' => $this->recentActivity($project),
+            'promptIdeaSuggestion' => session('prompt_idea_suggestion'),
+            'promptIdeaInput' => session('prompt_idea_input'),
         ]);
+    }
+
+    private function promptChart(Project $project): array
+    {
+        $start = now()->subDays(29)->startOfDay();
+        $labels = [];
+        for ($i = 0; $i < 30; $i++) {
+            $date = $start->copy()->addDays($i);
+            $labels[] = $date->format('Y-m-d');
+        }
+
+        $dailyCounts = $project->promptTemplates()
+            ->selectRaw('DATE(created_at) as date, COUNT(*) as count')
+            ->where('created_at', '>=', $start)
+            ->groupBy('date')
+            ->pluck('count', 'date');
+
+        $totalBefore = $project->promptTemplates()
+            ->where('created_at', '<', $start)
+            ->count();
+
+        $values = [];
+        $runningTotal = $totalBefore;
+        foreach ($labels as $label) {
+            $runningTotal += (int) ($dailyCounts[$label] ?? 0);
+            $values[] = $runningTotal;
+        }
+
+        return [
+            'labels' => $labels,
+            'values' => $values,
+        ];
+    }
+
+    private function tokenChart(Project $project): array
+    {
+        $start = now()->subDays(29)->startOfDay();
+        $labels = [];
+        for ($i = 0; $i < 30; $i++) {
+            $labels[] = $start->copy()->addDays($i)->format('Y-m-d');
+        }
+
+        $dailyTokens = $project->runs()
+            ->selectRaw('DATE(created_at) as date, SUM(coalesce(total_tokens_in, 0) + coalesce(total_tokens_out, 0)) as tokens')
+            ->where('created_at', '>=', $start)
+            ->groupBy('date')
+            ->pluck('tokens', 'date');
+
+        $values = array_map(
+            fn (string $label) => (int) ($dailyTokens[$label] ?? 0),
+            $labels
+        );
+
+        return [
+            'labels' => $labels,
+            'values' => $values,
+        ];
     }
 
     private function recentActivity(Project $project): array

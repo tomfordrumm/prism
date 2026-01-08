@@ -5,6 +5,7 @@ import Select from 'primevue/select';
 import SelectButton from 'primevue/selectbutton';
 import { Label } from '@/components/ui/label';
 import VariableChips from '@/components/chains/node/VariableChips.vue';
+import Icon from '@/components/Icon.vue';
 
 interface Option {
     value: number | string | null;
@@ -36,6 +37,7 @@ const props = defineProps<{
     errorConfig?: string;
     variableRows: VariableRow[];
     missingMappings: string[];
+    rating?: { up: number; down: number; score: number } | null;
 }>();
 
 const emit = defineEmits<{
@@ -56,7 +58,22 @@ const openMappingStudio = (name: string) => {
 <template>
     <div class="space-y-2">
         <div class="flex items-center justify-between gap-2">
-            <Label>{{ title }}</Label>
+            <div class="flex items-center gap-2">
+                <Label>{{ title }}</Label>
+                <span
+                    v-if="rating"
+                    class="inline-flex items-center gap-2 rounded-full border border-border/60 bg-muted px-2 py-0.5 text-[11px] text-muted-foreground"
+                >
+                    <span class="inline-flex items-center gap-1">
+                        <Icon name="thumbsUp" class="h-3 w-3" />
+                        {{ rating.up }}
+                    </span>
+                    <span class="inline-flex items-center gap-1">
+                        <Icon name="thumbsDown" class="h-3 w-3" />
+                        {{ rating.down }}
+                    </span>
+                </span>
+            </div>
             <SelectButton
                 :model-value="mode"
                 :options="promptModeOptions"

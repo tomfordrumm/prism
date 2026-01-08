@@ -34,6 +34,13 @@ class TargetPromptResolver
         return null;
     }
 
+    public function fromMessagesConfigForRole(array $messagesConfig, string $role): ?int
+    {
+        $message = collect($messagesConfig)->firstWhere('role', $role);
+
+        return $this->resolveVersionIdFromMessage($message);
+    }
+
     public function fromRunStep(?RunStep $runStep): ?int
     {
         if (! $runStep) {
@@ -80,14 +87,55 @@ class TargetPromptResolver
 
         return collect($directVersionIds)
             ->merge($steps
-            ->map(function ($step) {
-                $messagesConfig = $step->chainNode ? (array) ($step->chainNode->messages_config ?? []) : [];
+                ->flatMap(function ($step) {
+                    $messagesConfig = $step->chainNode ? (array) ($step->chainNode->messages_config ?? []) : [];
 
-                return $this->fromMessagesConfig($messagesConfig);
+                    return [
+                        $this->fromMessagesConfigForRole($messagesConfig, 'system'),
+                        $this->fromMessagesConfigForRole($messagesConfig, 'user'),
+                    ];
+                })
+                ->filter()
+                ->unique()
+                ->values())
+            ->all();
+    }
+
+    public function collectTargetVersionIdsFromSnapshot(array $snapshot): array
+    {
+        $nodes = collect($snapshot)->filter(fn ($node) => is_array($node))->values();
+
+        $templateIds = $nodes
+            ->flatMap(function (array $node) {
+                $messagesConfig = isset($node['messages_config']) && is_array($node['messages_config'])
+                    ? $node['messages_config']
+                    : [];
+
+                return $this->collectTemplateIds($messagesConfig);
             })
             ->filter()
             ->unique()
-            ->values())
+            ->values()
+            ->all();
+
+        if ($templateIds) {
+            $this->preloadLatestVersions($templateIds);
+        }
+
+        return $nodes
+            ->flatMap(function (array $node) {
+                $messagesConfig = isset($node['messages_config']) && is_array($node['messages_config'])
+                    ? $node['messages_config']
+                    : [];
+
+                return [
+                    $this->fromMessagesConfigForRole($messagesConfig, 'system'),
+                    $this->fromMessagesConfigForRole($messagesConfig, 'user'),
+                ];
+            })
+            ->filter()
+            ->unique()
+            ->values()
             ->all();
     }
 

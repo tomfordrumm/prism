@@ -18,16 +18,18 @@ class RunStepPresenter
     /**
      * @param \Illuminate\Support\Collection<int, \App\Models\PromptVersion> $promptVersions
      */
-    public function present(RunStep $step, Collection $promptVersions): array
+    public function present(RunStep $step, Collection $promptVersions, array $chainSnapshot = []): array
     {
         /** @var ChainNode|null $chainNode */
         $chainNode = $step->chainNode;
         /** @var ProviderCredential|null $providerCredential */
         $providerCredential = $chainNode?->providerCredential ?? $step->providerCredential;
 
+        $messagesConfig = $this->resolveMessagesConfig($step, $chainNode, $chainSnapshot);
+
         $targetPromptVersionId = $step->prompt_version_id
             ? (int) $step->prompt_version_id
-            : $this->targetPromptResolver->fromMessagesConfig($chainNode ? $chainNode->messages_config ?? [] : []);
+            : $this->targetPromptResolver->fromMessagesConfig($messagesConfig);
         $targetTemplateId = null;
         $targetPromptContent = null;
         if ($targetPromptVersionId) {
@@ -35,6 +37,8 @@ class RunStepPresenter
             $targetTemplateId = $version?->prompt_template_id;
             $targetPromptContent = $version?->content;
         }
+
+        $promptTargets = $this->buildPromptTargets($step, $messagesConfig, $promptVersions);
 
         $modelName = $chainNode?->model_name ?? ($step->request_payload['model'] ?? null);
         $chainNodePayload = null;
@@ -65,8 +69,10 @@ class RunStepPresenter
             'target_prompt_version_id' => $targetPromptVersionId,
             'target_prompt_template_id' => $targetTemplateId,
             'target_prompt_content' => $targetPromptContent,
+            'prompt_targets' => $promptTargets,
             'request_payload' => $step->request_payload,
             'response_raw' => $step->response_raw,
+            'response_content' => $step->response_content,
             'parsed_output' => $step->parsed_output,
             'tokens_in' => $step->tokens_in,
             'tokens_out' => $step->tokens_out,
@@ -84,8 +90,82 @@ class RunStepPresenter
                     'comment' => $feedback->comment,
                     'suggested_prompt_content' => $feedback->suggested_prompt_content,
                     'analysis' => $feedback->analysis,
+                    'target_prompt_version_id' => $feedback->target_prompt_version_id,
                 ];
             }),
         ];
+    }
+
+    /**
+     * @param \Illuminate\Support\Collection<int, \App\Models\PromptVersion> $promptVersions
+     */
+    private function buildPromptTargets(RunStep $step, array $messagesConfig, Collection $promptVersions): array
+    {
+        if (empty($messagesConfig) && $step->prompt_version_id) {
+            return [
+                'system' => null,
+                'user' => $this->resolvePromptTarget((int) $step->prompt_version_id, $promptVersions),
+            ];
+        }
+
+        $systemVersionId = $this->targetPromptResolver->fromMessagesConfigForRole($messagesConfig, 'system');
+        $userVersionId = $this->targetPromptResolver->fromMessagesConfigForRole($messagesConfig, 'user');
+
+        return [
+            'system' => $this->resolvePromptTarget($systemVersionId, $promptVersions),
+            'user' => $this->resolvePromptTarget($userVersionId, $promptVersions),
+        ];
+    }
+
+    /**
+     * @param \Illuminate\Support\Collection<int, \App\Models\PromptVersion> $promptVersions
+     */
+    private function resolvePromptTarget(?int $versionId, Collection $promptVersions): ?array
+    {
+        if (! $versionId) {
+            return null;
+        }
+
+        $version = $promptVersions->get($versionId) ?? $promptVersions->firstWhere('id', $versionId);
+
+        if (! $version) {
+            return null;
+        }
+
+        return [
+            'prompt_version_id' => $versionId,
+            'prompt_template_id' => $version->prompt_template_id,
+            'content' => $version->content,
+        ];
+    }
+
+    private function resolveMessagesConfig(RunStep $step, ?ChainNode $chainNode, array $chainSnapshot): array
+    {
+        $snapshotNode = null;
+        if ($step->chain_node_id) {
+            $snapshotNode = collect($chainSnapshot)->first(function ($node) use ($step) {
+                if (! is_array($node)) {
+                    return false;
+                }
+
+                return isset($node['id']) && (int) $node['id'] === (int) $step->chain_node_id;
+            });
+        }
+
+        if (! $snapshotNode) {
+            $snapshotNode = collect($chainSnapshot)->first(function ($node) use ($step) {
+            if (! is_array($node)) {
+                return false;
+            }
+
+            return isset($node['order_index']) && (int) $node['order_index'] === (int) $step->order_index;
+            });
+        }
+
+        if (is_array($snapshotNode) && isset($snapshotNode['messages_config']) && is_array($snapshotNode['messages_config'])) {
+            return $snapshotNode['messages_config'];
+        }
+
+        return $chainNode ? (array) ($chainNode->messages_config ?? []) : [];
     }
 }

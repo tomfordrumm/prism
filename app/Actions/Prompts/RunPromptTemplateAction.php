@@ -14,7 +14,9 @@ class RunPromptTemplateAction
         PromptTemplate $template,
         ProviderCredential $credential,
         string $modelName,
-        array $variables
+        array $variables,
+        ?int $datasetId = null,
+        ?int $testCaseId = null
     ): Run {
         $latestVersion = $template->promptVersions()->orderByDesc('version')->firstOrFail();
 
@@ -44,8 +46,8 @@ class RunPromptTemplateAction
             'chain_snapshot' => $snapshot,
             'input' => $variables,
             'status' => 'pending',
-            'dataset_id' => null,
-            'test_case_id' => null,
+            'dataset_id' => $datasetId,
+            'test_case_id' => $testCaseId,
             'started_at' => now(),
         ]);
     }

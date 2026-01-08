@@ -24,15 +24,18 @@ class FeedbackSubmissionService
         ?int $rating,
         bool $requestSuggestion,
         ?int $providerCredentialId = null,
-        ?string $modelName = null
+        ?string $modelName = null,
+        ?int $targetPromptVersionId = null
     ): array {
         $runStep->loadMissing('chainNode');
 
         $suggestionContent = null;
         $analysis = null;
+        $resolvedPromptVersion = null;
 
         if ($requestSuggestion) {
-            $promptVersion = $this->resolveTargetPromptVersion($runStep);
+            $promptVersion = $this->resolveTargetPromptVersion($runStep, $targetPromptVersionId);
+            $resolvedPromptVersion = $promptVersion;
 
             $suggestion = $this->promptImproverService->suggest(
                 $runStep,
@@ -48,6 +51,8 @@ class FeedbackSubmissionService
 
             $suggestionContent = $suggestion['suggestion'] ?? null;
             $analysis = $suggestion['analysis'] ?? null;
+        } elseif ($targetPromptVersionId) {
+            $resolvedPromptVersion = $this->resolveTargetPromptVersion($runStep, $targetPromptVersionId);
         }
 
         return [
@@ -60,11 +65,30 @@ class FeedbackSubmissionService
             'comment' => $comment,
             'suggested_prompt_content' => $suggestionContent,
             'analysis' => $analysis,
+            'target_prompt_version_id' => $resolvedPromptVersion?->id,
         ];
     }
 
-    private function resolveTargetPromptVersion(RunStep $runStep): PromptVersion
+    private function resolveTargetPromptVersion(RunStep $runStep, ?int $targetPromptVersionId = null): PromptVersion
     {
+        if ($targetPromptVersionId) {
+            $promptVersion = PromptVersion::query()
+                ->where('tenant_id', currentTenantId())
+                ->find($targetPromptVersionId);
+
+            if (! $promptVersion) {
+                throw new FeedbackSubmissionException('Prompt version is not available for this step.');
+            }
+
+            $allowedTemplateIds = $this->allowedTargetTemplateIds($runStep);
+
+            if ($allowedTemplateIds && ! in_array($promptVersion->prompt_template_id, $allowedTemplateIds, true)) {
+                throw new FeedbackSubmissionException('Selected prompt is not available for this step.');
+            }
+
+            return $promptVersion;
+        }
+
         $targetPromptVersionId = $this->targetPromptResolver->fromRunStep($runStep);
 
         if (! $targetPromptVersionId) {
@@ -80,5 +104,72 @@ class FeedbackSubmissionService
         }
 
         return $promptVersion;
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function allowedTargetPromptVersionIds(RunStep $runStep): array
+    {
+        if ($runStep->prompt_version_id) {
+            return [(int) $runStep->prompt_version_id];
+        }
+
+        $chainNode = $runStep->chainNode;
+        $messagesConfig = $chainNode ? (array) ($chainNode->messages_config ?? []) : [];
+
+        return collect([
+            $this->targetPromptResolver->fromMessagesConfigForRole($messagesConfig, 'system'),
+            $this->targetPromptResolver->fromMessagesConfigForRole($messagesConfig, 'user'),
+        ])
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function allowedTargetTemplateIds(RunStep $runStep): array
+    {
+        $templateIds = [];
+
+        if ($runStep->prompt_version_id) {
+            $version = PromptVersion::query()
+                ->where('tenant_id', currentTenantId())
+                ->find($runStep->prompt_version_id);
+            if ($version) {
+                $templateIds[] = (int) $version->prompt_template_id;
+            }
+        }
+
+        $chainNode = $runStep->chainNode;
+        $messagesConfig = $chainNode ? (array) ($chainNode->messages_config ?? []) : [];
+
+        foreach (['system', 'user'] as $role) {
+            $message = collect($messagesConfig)->firstWhere('role', $role);
+            if (! is_array($message)) {
+                continue;
+            }
+
+            $templateId = $message['prompt_template_id'] ?? null;
+            if ($templateId) {
+                $templateIds[] = (int) $templateId;
+                continue;
+            }
+
+            $versionId = $message['prompt_version_id'] ?? null;
+            if ($versionId) {
+                $version = PromptVersion::query()
+                    ->where('tenant_id', currentTenantId())
+                    ->find((int) $versionId);
+                if ($version) {
+                    $templateIds[] = (int) $version->prompt_template_id;
+                }
+            }
+        }
+
+        return collect($templateIds)->filter()->unique()->values()->all();
     }
 }

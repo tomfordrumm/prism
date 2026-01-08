@@ -127,9 +127,12 @@ const baseTheme = EditorView.theme(
         },
         '.cm-scroller': {
             fontFamily: 'inherit',
-            padding: '16px',
+            padding: '16px 16px 32px',
             lineHeight: '1.6',
             overflow: 'auto',
+        },
+        '.cm-content': {
+            paddingBottom: '16px',
         },
         '&.cm-focused': {
             outline: 'none',
@@ -201,7 +204,7 @@ const wrapperClass = computed(() =>
 </script>
 
 <template>
-    <div class="overflow-hidden rounded-md border border-border/60" :class="wrapperClass" :style="editorStyle">
+    <div class="flex flex-col overflow-hidden rounded-md border border-border/60" :class="wrapperClass" :style="editorStyle">
         <div
             v-if="showControls"
             class="flex items-center justify-between border-b border-border/60 px-2 py-1 text-xs text-muted-foreground"
@@ -259,7 +262,7 @@ const wrapperClass = computed(() =>
         <Codemirror
             v-model="editorValue"
             :extensions="extensions"
-            class="h-full w-full"
+            class="min-h-0 flex-1 w-full"
             @focus="emit('focus')"
             @blur="emit('blur')"
         />

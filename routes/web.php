@@ -14,6 +14,7 @@ use App\Http\Controllers\RunController;
 use App\Http\Controllers\DatasetController;
 use App\Http\Controllers\FeedbackController;
 use App\Http\Controllers\PromptVersionFromFeedbackController;
+use App\Http\Controllers\SystemSettingsController;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -32,12 +33,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/projects/create', [ProjectController::class, 'create'])->name('projects.create');
     Route::post('/projects', [ProjectController::class, 'store'])->name('projects.store');
     Route::get('/projects/{project}', [ProjectController::class, 'show'])->name('projects.show');
+    Route::get('/settings/system', [SystemSettingsController::class, 'edit'])->name('settings.system.edit');
+    Route::put('/settings/system', [SystemSettingsController::class, 'update'])->name('settings.system.update');
     Route::prefix('/projects/{project}')->group(function () {
+        Route::post('/prompt-idea', \App\Http\Controllers\ProjectPromptIdeaController::class)
+            ->name('projects.prompt-idea');
         Route::get('/prompts', [PromptTemplateController::class, 'index'])->name('projects.prompts.index');
         Route::post('/prompts', [PromptTemplateController::class, 'store'])->name('projects.prompts.store');
         Route::put('/prompts/{promptTemplate}', [PromptTemplateController::class, 'update'])->name('projects.prompts.update');
         Route::post('/prompts/{promptTemplate}/versions', [PromptTemplateController::class, 'storeVersion'])->name('projects.prompts.versions.store');
         Route::post('/prompts/{promptTemplate}/run', [PromptRunController::class, 'store'])->name('projects.prompts.run');
+        Route::post('/prompts/{promptTemplate}/run-dataset', [PromptRunController::class, 'runDataset'])->name('projects.prompts.run-dataset');
 
         Route::get('/chains', [ChainController::class, 'index'])->name('projects.chains.index');
         Route::get('/chains/create', [ChainController::class, 'create'])->name('projects.chains.create');

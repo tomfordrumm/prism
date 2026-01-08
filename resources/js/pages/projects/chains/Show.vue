@@ -171,6 +171,13 @@ const saveDescription = () => {
 };
 
 const sortedNodes = computed(() => [...props.nodes].sort((a, b) => a.order_index - b.order_index));
+const activeNodeDetails = computed(() => {
+    if (typeof activeNodeId.value !== 'number') {
+        return null;
+    }
+
+    return sortedNodes.value.find((node) => node.id === activeNodeId.value) ?? null;
+});
 const activeNodeId = ref<number | 'new' | 'input' | 'output' | null>(null);
 const hasProviderCredentials = computed(() => props.providerCredentials.length > 0);
 const promptModeOptions = [
@@ -530,6 +537,8 @@ const runModalOpen = ref(false);
                                             :user-version-options="userVersionOptions"
                                             :system-prompt-text="systemPromptText"
                                             :user-prompt-text="userPromptText"
+                                            :system-rating="activeNodeDetails?.prompt_details?.system?.rating ?? null"
+                                            :user-rating="activeNodeDetails?.prompt_details?.user?.rating ?? null"
                                             :system-editor-mode="systemEditorMode"
                                             :system-editor-preset="systemEditorPreset"
                                             :user-editor-mode="userEditorMode"

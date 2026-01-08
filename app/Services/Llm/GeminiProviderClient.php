@@ -209,11 +209,23 @@ class GeminiProviderClient implements LlmProviderClientInterface
     private function extractTextContent(array $candidates): string
     {
         foreach ($candidates as $candidate) {
-            $parts = $candidate->content->parts ?? [];
+            $content = is_array($candidate)
+                ? ($candidate['content'] ?? null)
+                : ($candidate->content ?? null);
+            $parts = [];
+
+            if (is_array($content)) {
+                $parts = $content['parts'] ?? [];
+            } elseif (is_object($content)) {
+                $parts = $content->parts ?? [];
+            }
+
             $textParts = [];
 
             foreach ($parts as $part) {
-                $text = $part->text ?? null;
+                $text = is_array($part)
+                    ? ($part['text'] ?? null)
+                    : ($part->text ?? null);
                 if (is_string($text) && $text !== '') {
                     $textParts[] = $text;
                 }

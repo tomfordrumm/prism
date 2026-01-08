@@ -21,6 +21,7 @@ import type {
     RunPayload,
     RunProviderCredentialOption,
     RunStepPayload,
+    RunImprovementDefaults,
 } from '@/types/runs';
 
 interface ProjectPayload {
@@ -37,6 +38,7 @@ interface Props {
     providerCredentials: RunProviderCredentialOption[];
     providerCredentialModels: Record<number, RunModelOption[]>;
     runHistory: RunHistoryItem[];
+    improvementDefaults?: RunImprovementDefaults;
 }
 
 const props = defineProps<Props>();
@@ -73,15 +75,17 @@ onMounted(startStream);
 const feedbackModal = reactive({
     open: false,
     stepId: null as number | null,
+    role: null as 'system' | 'user' | null,
 });
 
-const openFeedback = (stepId: number) => {
+const openFeedback = (stepId: number, role: 'system' | 'user') => {
     feedbackModal.open = true;
     feedbackModal.stepId = stepId;
+    feedbackModal.role = role;
 };
 
-const handleFinalFeedback = (stepId: number) => {
-    openFeedback(stepId);
+const handlePromptFeedback = (payload: { stepId: number; role: 'system' | 'user' }) => {
+    openFeedback(payload.stepId, payload.role);
 };
 
 const selectDefaultStep = () => {
@@ -114,6 +118,33 @@ watch(
 const activeFeedbackStep = computed(
     () => steps.value.find((step) => step.id === feedbackModal.stepId) ?? null,
 );
+
+const activeFeedbackTarget = computed(() => {
+    const step = activeFeedbackStep.value;
+    if (!step?.prompt_targets) return null;
+
+    if (feedbackModal.role === 'system') {
+        const target = step.prompt_targets.system;
+        return target ? { ...target, role: 'system' as const } : null;
+    }
+    if (feedbackModal.role === 'user') {
+        const target = step.prompt_targets.user;
+        return target ? { ...target, role: 'user' as const } : null;
+    }
+
+    const fallback = step.prompt_targets.system ?? step.prompt_targets.user;
+    if (!fallback) return null;
+    return {
+        ...fallback,
+        role: step.prompt_targets.system ? ('system' as const) : ('user' as const),
+    };
+});
+
+const handleFeedbackAdded = (payload: { stepId: number; feedback: RunStepPayload['feedback'][number] }) => {
+    const step = steps.value.find((item) => item.id === payload.stepId);
+    if (!step) return;
+    step.feedback = [...(step.feedback ?? []), payload.feedback];
+};
 </script>
 
 <template>
@@ -135,13 +166,18 @@ const activeFeedbackStep = computed(
                     <RunFinalResultCard
                         :final-step="finalStep"
                         :run-status="run.status"
-                        @request-feedback="handleFinalFeedback"
                     />
                 </div>
             </div>
         </div>
 
-        <RunTracePanel v-model:selected-step-id="selectedStepId" :steps="steps" />
+        <RunTracePanel
+            v-model:selected-step-id="selectedStepId"
+            :steps="steps"
+            :run-id="run.id"
+            @request-feedback="handlePromptFeedback"
+            @feedback-added="handleFeedbackAdded"
+        />
 
         <div class="mt-6">
             <Collapsible>
@@ -174,8 +210,12 @@ const activeFeedbackStep = computed(
             :run-id="run.id"
             :project-uuid="project.uuid"
             :step="activeFeedbackStep"
+            :target-prompt="activeFeedbackTarget"
             :provider-credentials="providerCredentials"
             :provider-credential-models="providerCredentialModels"
+            :default-provider-credential-id="improvementDefaults?.provider_credential_id ?? null"
+            :default-model-name="improvementDefaults?.model_name ?? null"
+            @feedback-added="handleFeedbackAdded"
         />
         <RunHistoryDrawer
             v-model:open="historyOpen"

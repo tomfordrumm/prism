@@ -11,6 +11,7 @@ import type {
     RunModelOption,
     RunProviderCredentialOption,
     RunStepPayload,
+    RunFeedbackItem,
 } from '@/types/runs';
 
 interface Props {
@@ -18,14 +19,23 @@ interface Props {
     runId: number;
     projectUuid: string;
     step: RunStepPayload | null;
+    targetPrompt: {
+        role: 'system' | 'user';
+        prompt_version_id: number | null;
+        prompt_template_id: number | null;
+        content: string | null;
+    } | null;
     providerCredentials: RunProviderCredentialOption[];
     providerCredentialModels: Record<number, RunModelOption[]>;
+    defaultProviderCredentialId?: number | null;
+    defaultModelName?: string | null;
 }
 
 const props = defineProps<Props>();
 
 const emit = defineEmits<{
     (event: 'update:open', value: boolean): void;
+    (event: 'feedback-added', payload: { stepId: number; feedback: RunFeedbackItem }): void;
 }>();
 
 const feedbackForm = useForm({
@@ -34,12 +44,19 @@ const feedbackForm = useForm({
     request_suggestion: true,
     provider_credential_id: null as number | null,
     model_name: '',
+    target_prompt_version_id: null as number | null,
 });
 
 const feedbackInput = ref('');
-const feedbackThread = ref<{ id: number; text: string; createdAt: string }[]>([]);
+const feedbackThread = ref<{ id: number; role: 'user' | 'assistant'; text: string; createdAt: string }[]>([]);
+const feedbackItems = ref<RunFeedbackItem[]>([]);
 const isGenerating = ref(false);
 const diffViewMode = ref<'diff' | 'final'>('diff');
+const getCookie = (name: string) =>
+    document.cookie
+        .split('; ')
+        .find((row) => row.startsWith(`${name}=`))
+        ?.split('=')[1] ?? '';
 
 const modelOptions = computed(() => {
     const credentialId = feedbackForm.provider_credential_id;
@@ -48,6 +65,8 @@ const modelOptions = computed(() => {
 
     return props.providerCredentialModels[credentialId] ?? [];
 });
+
+const targetPrompt = computed(() => props.targetPrompt);
 
 const handleProviderChange = () => {
     if (!feedbackForm.provider_credential_id) {
@@ -91,16 +110,17 @@ const activeStepMeta = computed(() => {
     };
 });
 
-const currentPromptContent = computed(
-    () => props.step?.target_prompt_content || '',
-);
+const currentPromptContent = computed(() => props.targetPrompt?.content || '');
 
 const latestSuggestion = computed(() => {
-    const step = props.step;
-    if (!step) return null;
-    const feedbackWithSuggestion = [...(step.feedback ?? [])]
+    if (!feedbackItems.value.length) return null;
+    const targetVersionId = props.targetPrompt?.prompt_version_id ?? null;
+    const feedbackWithSuggestion = [...feedbackItems.value]
         .reverse()
-        .find((fb) => fb.suggested_prompt_content);
+        .find((fb) =>
+            fb.suggested_prompt_content &&
+            (targetVersionId ? fb.target_prompt_version_id === targetVersionId : true),
+        );
     return feedbackWithSuggestion ?? null;
 });
 
@@ -169,28 +189,92 @@ const diffPreviewLines = computed(() => {
     return buildDiffLines(currentPromptContent.value, suggestedPromptContent.value);
 });
 
-const submitFeedback = () => {
+const submitFeedback = async () => {
     if (!props.step) return;
     if (!feedbackForm.comment.trim()) {
         feedbackForm.setError('comment', 'Provide feedback before generating.');
         return;
     }
 
+    feedbackForm.target_prompt_version_id = props.targetPrompt?.prompt_version_id ?? null;
+
     isGenerating.value = true;
-    feedbackForm.post(`/runs/${props.runId}/steps/${props.step.id}/feedback`, {
-        preserveScroll: true,
-        preserveState: true,
-        onSuccess: () => {
-            emit('update:open', true);
-            feedbackInput.value = '';
-        },
-        onFinish: () => {
-            isGenerating.value = false;
-        },
-    });
+    try {
+        const csrfToken =
+            document
+                .querySelector('meta[name="csrf-token"]')
+                ?.getAttribute('content') ||
+            decodeURIComponent(getCookie('XSRF-TOKEN'));
+        const response = await fetch(`/runs/${props.runId}/steps/${props.step.id}/feedback`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                rating: feedbackForm.rating,
+                comment: feedbackForm.comment,
+                request_suggestion: feedbackForm.request_suggestion,
+                provider_credential_id: feedbackForm.provider_credential_id,
+                model_name: feedbackForm.model_name,
+                target_prompt_version_id: feedbackForm.target_prompt_version_id,
+            }),
+        });
+
+        if (!response.ok) {
+            const payload = await response.json().catch(() => null);
+            const errors = payload?.errors;
+            if (errors) {
+                Object.entries(errors).forEach(([key, value]) => {
+                    const message = Array.isArray(value) ? value[0] : value;
+                    feedbackForm.setError(key, message as string);
+                });
+            } else if (payload?.message) {
+                feedbackForm.setError('comment', payload.message);
+            } else {
+                feedbackForm.setError('comment', 'Failed to submit feedback.');
+            }
+            return;
+        }
+
+        const payload = await response.json().catch(() => null);
+        const feedback = payload?.feedback as RunFeedbackItem | undefined;
+        if (feedback) {
+            feedbackItems.value = [...feedbackItems.value, feedback];
+            emit('feedback-added', { stepId: props.step.id, feedback });
+            const assistantText =
+                feedback.analysis ||
+                (feedback.suggested_prompt_content ? 'Suggestion ready.' : '');
+            if (assistantText) {
+                feedbackThread.value = [
+                    ...feedbackThread.value,
+                    {
+                        id: Date.now(),
+                        role: 'assistant',
+                        text: assistantText,
+                        createdAt: new Date().toLocaleTimeString(),
+                    },
+                ];
+            }
+        }
+        feedbackInput.value = '';
+        feedbackForm.clearErrors();
+    } finally {
+        isGenerating.value = false;
+    }
 };
 
 const handleGenerateSuggestion = () => {
+    if (!props.targetPrompt?.prompt_version_id) {
+        feedbackForm.setError(
+            'comment',
+            'Selected prompt is not available for improvements.',
+        );
+        return;
+    }
+
     if (!feedbackInput.value.trim()) {
         feedbackForm.setError('comment', 'Provide feedback before generating.');
         return;
@@ -202,6 +286,7 @@ const handleGenerateSuggestion = () => {
         ...feedbackThread.value,
         {
             id: Date.now(),
+            role: 'user',
             text: feedbackInput.value,
             createdAt: new Date().toLocaleTimeString(),
         },
@@ -212,10 +297,11 @@ const handleGenerateSuggestion = () => {
 const applySuggestion = () => {
     const step = props.step;
     const feedback = latestSuggestion.value;
-    if (!step || !feedback || !step.target_prompt_template_id) return;
+    const targetTemplateId = props.targetPrompt?.prompt_template_id ?? null;
+    if (!step || !feedback || !targetTemplateId) return;
 
     router.post(
-        `/projects/${props.projectUuid}/prompts/${step.target_prompt_template_id}/versions/from-feedback`,
+        `/projects/${props.projectUuid}/prompts/${targetTemplateId}/versions/from-feedback`,
         { feedback_id: feedback.id },
         {
             preserveScroll: true,
@@ -227,6 +313,24 @@ const applySuggestion = () => {
 };
 
 const selectDefaultImprover = () => {
+    const defaultCredentialId = props.defaultProviderCredentialId;
+    const defaultModelName = props.defaultModelName;
+
+    if (defaultCredentialId && defaultModelName) {
+        const availableModels = props.providerCredentialModels[defaultCredentialId] ?? [];
+        const hasModel = availableModels.some((model) => model.id === defaultModelName);
+        feedbackForm.provider_credential_id = defaultCredentialId;
+        feedbackForm.model_name = hasModel ? defaultModelName : availableModels[0]?.id ?? '';
+        return;
+    }
+
+    if (defaultCredentialId) {
+        const defaultModels = props.providerCredentialModels[defaultCredentialId] ?? [];
+        feedbackForm.provider_credential_id = defaultCredentialId;
+        feedbackForm.model_name = defaultModels[0]?.id ?? '';
+        return;
+    }
+
     if (!props.providerCredentials.length) {
         feedbackForm.provider_credential_id = null;
         feedbackForm.model_name = '';
@@ -258,15 +362,25 @@ const resetFeedbackState = () => {
     feedbackForm.request_suggestion = true;
     feedbackInput.value = '';
     feedbackThread.value = [];
+    feedbackItems.value = props.step?.feedback ? [...props.step.feedback] : [];
     diffViewMode.value = 'diff';
+    feedbackForm.target_prompt_version_id = props.targetPrompt?.prompt_version_id ?? null;
     selectDefaultImprover();
 };
 
 watch(
-    () => [props.open, props.step?.id],
+    () => [props.open, props.step?.id, props.targetPrompt?.prompt_version_id],
     ([open]) => {
         if (!open) return;
         resetFeedbackState();
+    },
+);
+
+watch(
+    () => props.step?.feedback,
+    (feedback) => {
+        if (!feedback) return;
+        feedbackItems.value = [...feedback];
     },
 );
 </script>
@@ -298,6 +412,7 @@ watch(
                         </p>
                         <div class="mt-4 text-xs text-muted-foreground">
                             <div>Step: {{ activeStepMeta.name }}</div>
+                            <div>Prompt: {{ targetPrompt?.role ?? '—' }}</div>
                             <div>Model: {{ activeStepMeta.model }}</div>
                             <div>Provider: {{ activeStepMeta.provider }}</div>
                         </div>
@@ -309,14 +424,17 @@ watch(
                         <div
                             v-for="message in feedbackThread"
                             :key="message.id"
-                            class="rounded-lg bg-white px-3 py-2 text-sm text-foreground shadow-sm"
+                            class="rounded-lg px-3 py-2 text-sm shadow-sm"
+                            :class="message.role === 'assistant' ? 'bg-white text-foreground' : 'bg-primary/10 text-foreground'"
                         >
-                            <div class="text-xs text-muted-foreground">{{ message.createdAt }}</div>
-                            <div class="mt-1">{{ message.text }}</div>
+                            <div class="text-xs text-muted-foreground">
+                                {{ message.role === 'assistant' ? 'Model' : 'You' }} · {{ message.createdAt }}
+                            </div>
+                            <div class="mt-1 whitespace-pre-wrap">{{ message.text }}</div>
                         </div>
                         <div v-if="isGenerating" class="flex items-center gap-2 text-xs text-muted-foreground">
                             <span class="h-2 w-2 animate-pulse rounded-full bg-emerald-500"></span>
-                            AI is analyzing your feedback...
+                            Analyzing...
                         </div>
                     </div>
                 </div>
@@ -376,10 +494,16 @@ watch(
                         </div>
 
                         <div class="flex justify-end gap-2">
-                            <Button :disabled="feedbackForm.processing" @click="handleGenerateSuggestion">
+                            <Button
+                                :disabled="isGenerating || !targetPrompt?.prompt_version_id"
+                                @click="handleGenerateSuggestion"
+                            >
                                 Generate
                             </Button>
                         </div>
+                        <p v-if="!targetPrompt?.prompt_version_id" class="text-xs text-muted-foreground">
+                            This prompt is inline-only and cannot be improved as a version.
+                        </p>
                     </div>
                 </div>
             </div>

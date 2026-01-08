@@ -5,10 +5,12 @@ namespace App\Http\Controllers;
 use App\Http\Requests\PromptTemplates\StorePromptTemplateRequest;
 use App\Http\Requests\PromptTemplates\StorePromptVersionRequest;
 use App\Http\Requests\PromptTemplates\UpdatePromptTemplateRequest;
+use App\Models\Feedback;
 use App\Models\ProviderCredential;
 use App\Models\Project;
 use App\Models\PromptVersion;
 use App\Models\PromptTemplate;
+use App\Models\Dataset;
 use App\Services\Llm\ModelCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Collection;
@@ -32,6 +34,10 @@ class PromptTemplateController extends Controller
             ->get();
 
         $providerCredentials = $this->providerCredentials();
+        $datasets = Dataset::query()
+            ->where('project_id', $project->id)
+            ->orderBy('name')
+            ->get(['id', 'name']);
 
         $templateList = $templates->map(function (PromptTemplate $template): array {
             /** @var PromptVersion|null $latestVersion = $template->latestVersion */
@@ -76,6 +82,8 @@ class PromptTemplateController extends Controller
                 ?? $versions->first();
         }
 
+        $ratingSummary = $this->promptVersionRatings($versions->pluck('id')->all());
+
         return Inertia::render('projects/prompts/Index', [
             'project' => $project->only(['id', 'uuid', 'name', 'description']),
             'templates' => $templateList,
@@ -85,13 +93,14 @@ class PromptTemplateController extends Controller
                 'description' => $selectedTemplate->description,
                 'variables' => $selectedTemplate->variables,
             ] : null,
-            'versions' => $versions->map(function (PromptVersion $version): array {
+            'versions' => $versions->map(function (PromptVersion $version) use ($ratingSummary): array {
                 return [
                     'id' => $version->id,
                     'version' => $version->version,
                     'changelog' => $version->changelog,
                     'created_at' => $version->created_at,
                     'content' => $version->content,
+                    'rating' => $ratingSummary[$version->id] ?? ['up' => 0, 'down' => 0, 'score' => 0],
                 ];
             }),
             'selectedVersion' => $selectedVersion
@@ -101,10 +110,15 @@ class PromptTemplateController extends Controller
                     'changelog' => $selectedVersion->changelog,
                     'created_at' => $selectedVersion->created_at,
                     'content' => $selectedVersion->content,
+                    'rating' => $ratingSummary[$selectedVersion->id] ?? ['up' => 0, 'down' => 0, 'score' => 0],
                 ]
                 : null,
             'providerCredentials' => $this->providerCredentialOptions($providerCredentials),
             'providerCredentialModels' => $this->providerCredentialModels($providerCredentials),
+            'datasets' => $datasets->map(fn (Dataset $dataset) => [
+                'value' => $dataset->id,
+                'label' => $dataset->name,
+            ])->all(),
         ]);
     }
 
@@ -198,6 +212,42 @@ class PromptTemplateController extends Controller
         if ($template->project_id !== $project->id || $template->tenant_id !== $project->tenant_id) {
             abort(404);
         }
+    }
+
+    /**
+     * @param array<int, int> $versionIds
+     * @return array<int, array{up:int, down:int, score:int}>
+     */
+    private function promptVersionRatings(array $versionIds): array
+    {
+        if (! $versionIds) {
+            return [];
+        }
+
+        return Feedback::query()
+            ->where('tenant_id', currentTenantId())
+            ->whereIn('target_prompt_version_id', $versionIds)
+            ->whereNotNull('rating')
+            ->selectRaw(
+                'target_prompt_version_id,
+                SUM(CASE WHEN rating > 0 THEN 1 ELSE 0 END) AS up,
+                SUM(CASE WHEN rating < 0 THEN 1 ELSE 0 END) AS down'
+            )
+            ->groupBy('target_prompt_version_id')
+            ->get()
+            ->mapWithKeys(function ($row) {
+                $up = (int) ($row->up ?? 0);
+                $down = (int) ($row->down ?? 0);
+
+                return [
+                    (int) $row->target_prompt_version_id => [
+                        'up' => $up,
+                        'down' => $down,
+                        'score' => $up - $down,
+                    ],
+                ];
+            })
+            ->all();
     }
 
     private function providerCredentials(): Collection

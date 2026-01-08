@@ -87,6 +87,8 @@ const emit = defineEmits<{
                 </Button>
             </div>
 
+            <slot name="before-run" />
+
             <div v-if="runMode === 'manual'" class="space-y-3">
                 <slot name="before-input" />
                 <div v-if="inputFields.length" class="grid gap-3">

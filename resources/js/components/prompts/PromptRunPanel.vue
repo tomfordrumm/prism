@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, toRefs, watch } from 'vue';
+import { useForm } from '@inertiajs/vue3';
 import RunChainModal from '@/components/chains/RunChainModal.vue';
 import InputError from '@/components/InputError.vue';
 import { Label } from '@/components/ui/label';
@@ -13,11 +14,17 @@ interface PromptVariable {
     description?: string | null;
 }
 
+interface DatasetOption {
+    value: number;
+    label: string;
+}
+
 interface Props {
     open: boolean;
     projectUuid: string;
     promptTemplateId: number;
     variables: PromptVariable[];
+    datasets: DatasetOption[];
     providerCredentials: ProviderCredentialOption[];
     providerCredentialModels: Record<number, PromptModelOption[]>;
 }
@@ -27,7 +34,7 @@ const emit = defineEmits<{
     (event: 'update:open', value: boolean): void;
 }>();
 
-const { variables, providerCredentials, providerCredentialModels } = toRefs(props);
+const { variables, providerCredentials, providerCredentialModels, datasets } = toRefs(props);
 
 const defaultVariables = computed(() => {
     if (!variables.value.length) return '{}';
@@ -45,6 +52,11 @@ const { runForm, modelOptions, canRunPrompt, syncModelSelection } = usePromptRun
 });
 
 const runMode = ref<'manual' | 'dataset'>('manual');
+const runDatasetForm = useForm({
+    dataset_id: (props.datasets[0]?.value as number) ?? null,
+    provider_credential_id: null as number | null,
+    model_name: '',
+});
 
 const { inputFields, manualInputValues, missingManualInputs } = usePromptInputBuilder({
     variables,
@@ -77,6 +89,26 @@ watch(
 );
 
 const submitRun = () => {
+    if (runMode.value === 'dataset') {
+        if (!runDatasetForm.dataset_id) {
+            runDatasetForm.setError('dataset_id', 'Select a dataset');
+            return;
+        }
+
+        runDatasetForm.provider_credential_id = runForm.provider_credential_id;
+        runDatasetForm.model_name = runForm.model_name;
+        runDatasetForm.post(
+            `/projects/${props.projectUuid}/prompts/${props.promptTemplateId}/run-dataset`,
+            {
+                preserveScroll: true,
+                onSuccess: () => {
+                    emit('update:open', false);
+                },
+            },
+        );
+        return;
+    }
+
     if (inputFields.value.length && missingManualInputs.value.length) {
         runForm.setError('variables', 'Fill all required inputs before running.');
         return;
@@ -96,19 +128,24 @@ const submitRun = () => {
         :open="open"
         :run-mode="runMode"
         :run-form="inputProxy"
+        :run-dataset-form="runDatasetForm"
+        :datasets="datasets"
+        :has-datasets="datasets.length > 0"
         :input-fields="inputFields"
         :input-values="manualInputValues"
-        :can-submit="canRunPrompt"
+        :can-submit="runMode === 'dataset' ? Boolean(runDatasetForm.dataset_id) : canRunPrompt"
         title="Run prompt (latest version)"
         description="Execute the latest prompt version with your variables."
-        :show-run-mode-toggle="false"
-        :show-dataset="false"
+        :show-run-mode-toggle="true"
+        :show-dataset="true"
         @update:open="emit('update:open', $event)"
+        @update:run-mode="runMode = $event"
         @update:input="runForm.variables = $event"
         @update:input-value="({ path, value }) => { manualInputValues[path] = value; }"
+        @update:dataset-id="runDatasetForm.dataset_id = $event"
         @submit="submitRun"
     >
-        <template #before-input>
+        <template #before-run>
             <div class="grid gap-4 md:grid-cols-2">
                 <div class="grid gap-2">
                     <Label for="prompt_run_provider_credential_id">Provider credential</Label>

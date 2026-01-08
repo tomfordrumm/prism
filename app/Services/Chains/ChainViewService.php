@@ -5,6 +5,7 @@ namespace App\Services\Chains;
 use App\Models\Chain;
 use App\Models\ChainNode;
 use App\Models\Dataset;
+use App\Models\Feedback;
 use App\Models\Project;
 use App\Models\PromptTemplate;
 use App\Models\PromptVersion;
@@ -46,6 +47,7 @@ class ChainViewService
 
         $promptVersionIds = $this->collectPromptVersionIds($nodes, $latestVersionByTemplate, $versionToTemplate);
         $promptVersions = $this->promptVersionsById($promptVersionIds);
+        $promptRatings = $this->promptRatingsByVersionId($promptVersionIds);
 
         return [
             'project' => $project->only(['id', 'uuid', 'name', 'description']),
@@ -59,7 +61,8 @@ class ChainViewService
                 $versionToTemplate,
                 $templateMeta,
                 $latestVersionByTemplate,
-                $promptVersions
+                $promptVersions,
+                $promptRatings
             ),
             'providerCredentials' => $this->providerCredentialOptions($providerCredentials),
             'providerCredentialModels' => $this->providerCredentialModels($providerCredentials),
@@ -75,14 +78,16 @@ class ChainViewService
         array $versionToTemplate,
         array $templateMeta,
         array $latestVersionByTemplate,
-        array $promptVersions
+        array $promptVersions,
+        array $promptRatings
     ): array
     {
         return $nodes->map(function (ChainNode $node) use (
             $versionToTemplate,
             $templateMeta,
             $latestVersionByTemplate,
-            $promptVersions
+            $promptVersions,
+            $promptRatings
         ): array {
             /** @var array[] $messagesConfig */
             $messagesConfig = (array) $node->messages_config;
@@ -107,7 +112,8 @@ class ChainViewService
                 $versionToTemplate,
                 $templateMeta,
                 $latestVersionByTemplate,
-                $promptVersions
+                $promptVersions,
+                $promptRatings
             );
             $userDetails = $this->buildMessageDetails(
                 'user',
@@ -115,7 +121,8 @@ class ChainViewService
                 $versionToTemplate,
                 $templateMeta,
                 $latestVersionByTemplate,
-                $promptVersions
+                $promptVersions,
+                $promptRatings
             );
             $variablesUsed = array_values(array_unique(array_merge(
                 $systemDetails['variables'] ?? [],
@@ -412,6 +419,38 @@ class ChainViewService
             ->all();
     }
 
+    private function promptRatingsByVersionId(array $versionIds): array
+    {
+        if (! $versionIds) {
+            return [];
+        }
+
+        return Feedback::query()
+            ->where('tenant_id', currentTenantId())
+            ->whereIn('target_prompt_version_id', $versionIds)
+            ->whereNotNull('rating')
+            ->selectRaw(
+                'target_prompt_version_id,
+                SUM(CASE WHEN rating > 0 THEN 1 ELSE 0 END) AS up,
+                SUM(CASE WHEN rating < 0 THEN 1 ELSE 0 END) AS down'
+            )
+            ->groupBy('target_prompt_version_id')
+            ->get()
+            ->mapWithKeys(function ($row) {
+                $up = (int) ($row->up ?? 0);
+                $down = (int) ($row->down ?? 0);
+
+                return [
+                    (int) $row->target_prompt_version_id => [
+                        'up' => $up,
+                        'down' => $down,
+                        'score' => $up - $down,
+                    ],
+                ];
+            })
+            ->all();
+    }
+
     private function mapTemplateMeta(array $promptTemplates): array
     {
         return collect($promptTemplates)
@@ -431,7 +470,8 @@ class ChainViewService
         array $versionToTemplate,
         array $templateMeta,
         array $latestVersionByTemplate,
-        array $promptVersions
+        array $promptVersions,
+        array $promptRatings
     ): ?array {
         $message = collect($messages)
             ->filter(fn ($item) => is_array($item))
@@ -455,6 +495,7 @@ class ChainViewService
 
         $templateInfo = $templateMeta[$templateId] ?? ['variables' => [], 'name' => null];
         $versionInfo = $versionId ? ($promptVersions[$versionId] ?? null) : null;
+        $ratingInfo = $versionId ? ($promptRatings[$versionId] ?? null) : null;
         $content = $mode === 'inline'
             ? ($message['inline_content'] ?? null)
             : ($versionInfo['content'] ?? null);
@@ -469,6 +510,7 @@ class ChainViewService
             'prompt_version' => $versionInfo['version'] ?? null,
             'content' => $content,
             'variables' => $variables,
+            'rating' => $ratingInfo,
         ];
     }
 
