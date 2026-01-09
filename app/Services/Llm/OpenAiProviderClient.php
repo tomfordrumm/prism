@@ -4,6 +4,7 @@ namespace App\Services\Llm;
 
 use App\Models\ProviderCredential;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Str;
 use OpenAI\Exceptions\ErrorException;
 use RuntimeException;
 use Throwable;
@@ -29,17 +30,26 @@ class OpenAiProviderClient implements LlmProviderClientInterface
             throw new RuntimeException('OpenAI call failed: '.$exception->getMessage(), previous: $exception);
         }
 
-        $content = $response->choices[0]->message->content ?? '';
+        $raw = $response->toArray();
+        $content = data_get($raw, 'choices.0.message.content', '');
+        if ($content === '' && ! data_get($raw, 'choices', null)) {
+            logger()->warning('OpenAI response missing choices', [
+                'credential_id' => $credential->id,
+                'model' => $modelName,
+                'raw_keys' => array_keys($raw),
+                'raw_preview' => Str::limit(json_encode($raw), 1500),
+            ]);
+        }
 
         $usage = [
-            'tokens_in' => $response->usage ? $response->usage->promptTokens : null,
-            'tokens_out' => $response->usage ? $response->usage->completionTokens : null,
+            'tokens_in' => data_get($raw, 'usage.prompt_tokens'),
+            'tokens_out' => data_get($raw, 'usage.completion_tokens'),
         ];
 
         return new LlmResponseDto(
             content: is_string($content) ? $content : json_encode($content),
             usage: $usage,
-            raw: $response->toArray(),
+            raw: $raw,
             meta: []
         );
     }
