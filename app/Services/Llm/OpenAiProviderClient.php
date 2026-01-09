@@ -5,6 +5,10 @@ namespace App\Services\Llm;
 use App\Models\ProviderCredential;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Str;
+use GuzzleHttp\Client as GuzzleClient;
+use GuzzleHttp\HandlerStack;
+use Psr\Http\Message\RequestInterface;
+use Psr\Http\Message\ResponseInterface;
 use OpenAI\Exceptions\ErrorException;
 use RuntimeException;
 use Throwable;
@@ -88,7 +92,13 @@ class OpenAiProviderClient implements LlmProviderClientInterface
             ]);
             throw $exception;
         }
-        $factory = (new OpenAIFactory())->withApiKey($apiKey);
+        $stack = HandlerStack::create();
+        $stack->push($this->responseLogger($credential->id));
+        $httpClient = new GuzzleClient(['handler' => $stack]);
+
+        $factory = (new OpenAIFactory())
+            ->withApiKey($apiKey)
+            ->withHttpClient($httpClient);
 
         /** @var array $metadata */
         $metadata = $credential->metadata ?? [];
@@ -98,6 +108,33 @@ class OpenAiProviderClient implements LlmProviderClientInterface
         }
 
         return $factory->make();
+    }
+
+    private function responseLogger(int $credentialId): callable
+    {
+        return function (callable $handler) use ($credentialId) {
+            return function (RequestInterface $request, array $options) use ($handler, $credentialId) {
+                return $handler($request, $options)->then(
+                    function (ResponseInterface $response) use ($request, $credentialId) {
+                        $body = (string) $response->getBody();
+                        $shouldLog =
+                            $response->getStatusCode() >= 400 ||
+                            ! Str::contains($body, '"choices"');
+
+                        if ($shouldLog) {
+                            logger()->warning('OpenAI raw response', [
+                                'credential_id' => $credentialId,
+                                'status' => $response->getStatusCode(),
+                                'url' => (string) $request->getUri(),
+                                'body_preview' => Str::limit($body, 2000),
+                            ]);
+                        }
+
+                        return $response;
+                    }
+                );
+            };
+        };
     }
 
     private function mapModelList($response): array
