@@ -36,6 +36,7 @@ class PromptConversationService
             ->when(! $runStepId, fn ($query) => $query->whereNull('run_step_id'))
             ->when($targetPromptVersionId, fn ($query) => $query->where('target_prompt_version_id', $targetPromptVersionId))
             ->when(! $targetPromptVersionId, fn ($query) => $query->whereNull('target_prompt_version_id'))
+            ->orderBy('updated_at', 'desc')
             ->firstOr(function () use ($project, $type, $runId, $runStepId, $targetPromptVersionId) {
                 return PromptConversation::create([
                     'tenant_id' => currentTenantId(),
@@ -74,6 +75,34 @@ class PromptConversationService
                 'meta' => $meta ?: null,
             ]);
         });
+    }
+
+    public function listConversations(Project $project, string $type): Collection
+    {
+        return PromptConversation::query()
+            ->where('tenant_id', currentTenantId())
+            ->where('project_id', $project->id)
+            ->where('type', $type)
+            ->orderBy('updated_at', 'desc')
+            ->get();
+    }
+
+    public function createNewConversation(
+        Project $project,
+        string $type,
+        ?int $runId = null,
+        ?int $runStepId = null,
+        ?int $targetPromptVersionId = null
+    ): PromptConversation {
+        return PromptConversation::create([
+            'tenant_id' => currentTenantId(),
+            'project_id' => $project->id,
+            'type' => $type,
+            'run_id' => $runId,
+            'run_step_id' => $runStepId,
+            'target_prompt_version_id' => $targetPromptVersionId,
+            'status' => 'active',
+        ]);
     }
 
     private function assertTenantAccess(PromptConversation $conversation): void

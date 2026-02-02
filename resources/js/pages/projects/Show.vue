@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import Icon from '@/components/Icon.vue';
 import Chart from 'primevue/chart';
 import PromptChat from '@/components/prompts/PromptChat.vue';
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 
 interface ProjectPayload {
     id: number;
@@ -22,6 +22,14 @@ interface ProjectPayload {
 interface ChartSeriesPayload {
     labels: string[];
     values: number[];
+}
+
+interface ConversationListItem {
+    id: number;
+    type: 'idea' | 'run_feedback';
+    status: string;
+    created_at: string;
+    updated_at: string;
 }
 
 const props = defineProps<{
@@ -168,6 +176,8 @@ const tokenChartOptions = {
 };
 
 const promptIdeaSuggestion = ref<{ suggestion?: string | null; analysis?: string | null } | null>(null);
+const conversations = ref<ConversationListItem[]>([]);
+const chatContextKey = ref(Date.now());
 
 const savePromptForm = useForm({
     name: '',
@@ -176,6 +186,37 @@ const savePromptForm = useForm({
     initial_changelog: 'Created from idea',
 });
 
+const getCookie = (name: string) =>
+    document.cookie
+        .split('; ')
+        .find((row) => row.startsWith(`${name}=`))
+        ?.split('=')[1] ?? '';
+
+const fetchConversations = async () => {
+    const csrfToken =
+        document
+            .querySelector('meta[name="csrf-token"]')
+            ?.getAttribute('content') ||
+        decodeURIComponent(getCookie('XSRF-TOKEN'));
+
+    const response = await fetch(
+        `/projects/${props.project.uuid}/prompt-conversations?type=idea`,
+        {
+            method: 'GET',
+            headers: {
+                Accept: 'application/json',
+                ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
+            },
+            credentials: 'same-origin',
+        }
+    );
+
+    const payload = await response.json().catch(() => null);
+    if (payload?.conversations) {
+        conversations.value = payload.conversations;
+    }
+};
+
 const handlePromptChatSuggestion = (payload: { suggestedPrompt?: string | null; analysis?: string | null }) => {
     promptIdeaSuggestion.value = {
         suggestion: payload.suggestedPrompt ?? null,
@@ -183,9 +224,36 @@ const handlePromptChatSuggestion = (payload: { suggestedPrompt?: string | null; 
     };
 };
 
+const handleNewConversation = () => {
+    promptIdeaSuggestion.value = null;
+    chatContextKey.value = Date.now();
+    // Refresh conversations list to include the new one
+    fetchConversations();
+};
+
+const handleSelectConversation = () => {
+    // Conversation loaded in PromptChat component
+    // Reset the suggestion state since we're loading an existing conversation
+    promptIdeaSuggestion.value = null;
+};
+
+const handleConversationCreated = (conversation: ConversationListItem) => {
+    // Add the new conversation to the beginning of the list
+    // Check if it already exists to avoid duplicates
+    const exists = conversations.value.some(c => c.id === conversation.id);
+    if (!exists) {
+        conversations.value.unshift(conversation);
+    }
+};
+
 const submitSavePrompt = () => {
     if (!savePromptForm.initial_content) return;
-    savePromptForm.post(`/projects/${props.project.uuid}/prompts`);
+    savePromptForm.post(`/projects/${props.project.uuid}/prompts`, {
+        onSuccess: () => {
+            // Refresh conversations after saving
+            fetchConversations();
+        },
+    });
 };
 
 watch(
@@ -199,6 +267,10 @@ watch(
     },
     { immediate: true },
 );
+
+onMounted(() => {
+    fetchConversations();
+});
 </script>
 
 <template>
@@ -323,48 +395,45 @@ watch(
                 </div>
             </div>
 
-            <div class="flex flex-1 flex-col gap-8">
+            <div class="flex flex-1 flex-col gap-8 min-h-[600px]">
                 <PromptChat
-                    class="flex-1"
+                    class="flex-1 rounded-2xl border border-border/60 bg-white shadow-sm overflow-hidden"
                     :project-uuid="project.uuid"
                     type="idea"
                     :title="'Improve your thoughts into a prompt'"
-                    :welcome="'Share your raw idea and I’ll convert it into a clean, ready-to-run prompt.'"
-                    placeholder="Спросите что-нибудь..."
-                    max-width-class="max-w-5xl"
+                    :welcome="'Share your raw idea and I will convert it into a clean, ready-to-run prompt.'"
+                    placeholder="Ask something..."
+                    max-width-class="max-w-full"
+                    :show-history="true"
+                    :conversations="conversations"
+                    :context-key="chatContextKey"
                     @suggestion="handlePromptChatSuggestion"
+                    @new-conversation="handleNewConversation"
+                    @select-conversation="handleSelectConversation"
+                    @conversation-created="handleConversationCreated"
                 >
-                    <template #after-messages>
-                        <div v-if="promptIdeaSuggestion" class="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-foreground">
-                            <div class="text-xs font-semibold uppercase text-muted-foreground">Improved prompt</div>
-                            <pre class="mt-2 whitespace-pre-wrap text-sm text-foreground">
-{{ promptIdeaSuggestion.suggestion || 'No suggestion yet.' }}
-                            </pre>
-                            <div v-if="promptIdeaSuggestion.analysis" class="mt-3 text-sm text-muted-foreground">
-                                {{ promptIdeaSuggestion.analysis }}
+                    <template #save-actions="{ suggestedPrompt }">
+                        <div class="grid gap-3">
+                            <div class="grid gap-2">
+                                <label
+                                    for="prompt_idea_name"
+                                    class="text-xs font-semibold uppercase text-muted-foreground"
+                                >
+                                    Prompt name
+                                </label>
+                                <Input
+                                    id="prompt_idea_name"
+                                    v-model="savePromptForm.name"
+                                    placeholder="e.g. Idea prompt"
+                                />
+                                <p v-if="savePromptForm.errors.name" class="text-xs text-red-600">
+                                    {{ savePromptForm.errors.name }}
+                                </p>
                             </div>
-                            <div class="mt-4 grid gap-3">
-                                <div class="grid gap-2">
-                                    <label
-                                        for="prompt_idea_name"
-                                        class="text-xs font-semibold uppercase text-muted-foreground"
-                                    >
-                                        Prompt name
-                                    </label>
-                                    <Input
-                                        id="prompt_idea_name"
-                                        v-model="savePromptForm.name"
-                                        placeholder="e.g. Idea prompt"
-                                    />
-                                    <p v-if="savePromptForm.errors.name" class="text-xs text-red-600">
-                                        {{ savePromptForm.errors.name }}
-                                    </p>
-                                </div>
-                                <div class="flex justify-end">
-                                    <Button :disabled="savePromptForm.processing" @click="submitSavePrompt">
-                                        Save as prompt
-                                    </Button>
-                                </div>
+                            <div class="flex justify-end">
+                                <Button :disabled="savePromptForm.processing" @click="submitSavePrompt">
+                                    Save as prompt
+                                </Button>
                             </div>
                         </div>
                     </template>

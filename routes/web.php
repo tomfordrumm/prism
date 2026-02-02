@@ -1,19 +1,19 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\ProjectController;
-use App\Http\Controllers\ProviderCredentialController;
-use App\Http\Controllers\TenantController;
-use App\Http\Controllers\PromptTemplateController;
-use App\Http\Controllers\PromptRunController;
 use App\Http\Controllers\ChainController;
 use App\Http\Controllers\ChainNodeController;
-use App\Http\Controllers\RunController;
 use App\Http\Controllers\DatasetController;
 use App\Http\Controllers\FeedbackController;
-use App\Http\Controllers\PromptVersionFromFeedbackController;
-use App\Http\Controllers\SystemSettingsController;
+use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\PromptConversationController;
+use App\Http\Controllers\PromptRunController;
+use App\Http\Controllers\PromptTemplateController;
+use App\Http\Controllers\PromptVersionFromFeedbackController;
+use App\Http\Controllers\ProviderCredentialController;
+use App\Http\Controllers\RunController;
+use App\Http\Controllers\SystemSettingsController;
+use App\Http\Controllers\TenantController;
+use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
 Route::get('/', function () {
@@ -38,6 +38,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/settings/system', [SystemSettingsController::class, 'edit'])->name('settings.system.edit');
     Route::put('/settings/system', [SystemSettingsController::class, 'update'])->name('settings.system.update');
     Route::prefix('/projects/{project}')->group(function () {
+        Route::get('/prompt-conversations', [PromptConversationController::class, 'index'])
+            ->name('projects.prompt-conversations.index');
         Route::post('/prompt-conversations', [PromptConversationController::class, 'store'])
             ->name('projects.prompt-conversations.store');
         Route::get('/prompt-conversations/{conversation}', [PromptConversationController::class, 'show'])

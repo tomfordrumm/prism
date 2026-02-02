@@ -15,17 +15,48 @@ class PromptConversationController extends Controller
     public function __construct(
         private PromptConversationService $conversationService,
         private PromptConversationLlmService $llmService
-    ) {
+    ) {}
+
+    public function index(Project $project): JsonResponse
+    {
+        $type = request()->query('type');
+        if (! is_string($type) || $type === '') {
+            return response()->json(['error' => 'Type parameter is required'], 400);
+        }
+
+        $conversations = $this->conversationService->listConversations($project, $type);
+
+        return response()->json([
+            'conversations' => $conversations->map(fn ($conversation) => [
+                'id' => $conversation->id,
+                'type' => $conversation->type,
+                'status' => $conversation->status,
+                'created_at' => $conversation->created_at?->toISOString(),
+                'updated_at' => $conversation->updated_at?->toISOString(),
+            ]),
+        ]);
     }
 
     public function store(StorePromptConversationRequest $request, Project $project): JsonResponse
     {
-        $conversation = $this->conversationService->getOrCreate($project, [
-            'type' => $request->input('type'),
-            'run_id' => $request->integer('run_id') ?: null,
-            'run_step_id' => $request->integer('run_step_id') ?: null,
-            'target_prompt_version_id' => $request->integer('target_prompt_version_id') ?: null,
-        ]);
+        $forceNew = $request->boolean('force_new');
+
+        if ($forceNew) {
+            $conversation = $this->conversationService->createNewConversation(
+                $project,
+                $request->input('type'),
+                $request->integer('run_id') ?: null,
+                $request->integer('run_step_id') ?: null,
+                $request->integer('target_prompt_version_id') ?: null
+            );
+        } else {
+            $conversation = $this->conversationService->getOrCreate($project, [
+                'type' => $request->input('type'),
+                'run_id' => $request->integer('run_id') ?: null,
+                'run_step_id' => $request->integer('run_step_id') ?: null,
+                'target_prompt_version_id' => $request->integer('target_prompt_version_id') ?: null,
+            ]);
+        }
 
         $initialMessage = $request->input('initial_message');
         if (is_string($initialMessage) && $initialMessage !== '') {
