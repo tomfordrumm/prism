@@ -3,14 +3,17 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\PromptTemplates\StorePromptTemplateRequest;
+use App\Http\Requests\PromptTemplates\StorePromptVersionAndRunRequest;
 use App\Http\Requests\PromptTemplates\StorePromptVersionRequest;
 use App\Http\Requests\PromptTemplates\UpdatePromptTemplateRequest;
+use App\Actions\Runs\RerunRunAction;
 use App\Models\Feedback;
 use App\Models\ProviderCredential;
 use App\Models\Project;
 use App\Models\PromptVersion;
 use App\Models\PromptTemplate;
 use App\Models\Dataset;
+use App\Models\Run;
 use App\Services\Llm\ModelCatalog;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Collection;
@@ -198,6 +201,34 @@ class PromptTemplateController extends Controller
             'prompt_id' => $promptTemplate->id,
             'version' => $promptTemplate->promptVersions()->max('version'),
         ]);
+    }
+
+    public function storeVersionAndRun(
+        StorePromptVersionAndRunRequest $request,
+        Project $project,
+        PromptTemplate $promptTemplate,
+        RerunRunAction $rerunRunAction
+    ): RedirectResponse {
+        $this->assertProjectTenant($project);
+        $this->assertTemplateProject($promptTemplate, $project);
+
+        $run = Run::query()
+            ->where('project_id', $project->id)
+            ->findOrFail($request->integer('run_id'));
+
+        $promptTemplate->createNewVersion([
+            'content' => $request->string('content'),
+            'changelog' => $request->input('changelog'),
+            'created_by' => $request->user()->id,
+        ]);
+
+        $result = $rerunRunAction->execute($project, $run);
+
+        if ($result['type'] === 'dataset') {
+            return redirect()->route('projects.runs.index', $project);
+        }
+
+        return redirect()->route('projects.runs.show', [$project, $result['run']]);
     }
 
     private function assertProjectTenant(Project $project): void

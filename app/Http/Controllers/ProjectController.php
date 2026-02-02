@@ -63,8 +63,6 @@ class ProjectController extends Controller
             'promptChart' => $promptChart,
             'tokenChart' => $tokenChart,
             'recentActivity' => $this->recentActivity($project),
-            'promptIdeaSuggestion' => session('prompt_idea_suggestion'),
-            'promptIdeaInput' => session('prompt_idea_input'),
         ]);
     }
 

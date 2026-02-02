@@ -17,11 +17,8 @@ import { jsonPretty } from '@/composables/useRunFormatters';
 import { useRunStream } from '@/composables/useRunStream';
 import type {
     RunHistoryItem,
-    RunModelOption,
     RunPayload,
-    RunProviderCredentialOption,
     RunStepPayload,
-    RunImprovementDefaults,
 } from '@/types/runs';
 
 interface ProjectPayload {
@@ -35,10 +32,7 @@ interface Props {
     project: ProjectPayload;
     run: RunPayload;
     steps: RunStepPayload[];
-    providerCredentials: RunProviderCredentialOption[];
-    providerCredentialModels: Record<number, RunModelOption[]>;
     runHistory: RunHistoryItem[];
-    improvementDefaults?: RunImprovementDefaults;
 }
 
 const props = defineProps<Props>();
@@ -140,11 +134,6 @@ const activeFeedbackTarget = computed(() => {
     };
 });
 
-const handleFeedbackAdded = (payload: { stepId: number; feedback: RunStepPayload['feedback'][number] }) => {
-    const step = steps.value.find((item) => item.id === payload.stepId);
-    if (!step) return;
-    step.feedback = [...(step.feedback ?? []), payload.feedback];
-};
 </script>
 
 <template>
@@ -211,11 +200,6 @@ const handleFeedbackAdded = (payload: { stepId: number; feedback: RunStepPayload
             :project-uuid="project.uuid"
             :step="activeFeedbackStep"
             :target-prompt="activeFeedbackTarget"
-            :provider-credentials="providerCredentials"
-            :provider-credential-models="providerCredentialModels"
-            :default-provider-credential-id="improvementDefaults?.provider_credential_id ?? null"
-            :default-model-name="improvementDefaults?.model_name ?? null"
-            @feedback-added="handleFeedbackAdded"
         />
         <RunHistoryDrawer
             v-model:open="historyOpen"

@@ -5,6 +5,7 @@ namespace App\Services\Runs;
 use App\Models\Chain;
 use App\Models\ChainNode;
 use App\Models\ProviderCredential;
+use App\Models\PromptVersion;
 use App\Models\Run;
 use Illuminate\Support\Collection;
 
@@ -69,15 +70,65 @@ class ChainSnapshotLoader
             ? $chain->nodes
             : $chain->nodes()->orderBy('order_index')->get();
 
+        $templateIds = $nodes
+            ->flatMap(function (ChainNode $node) {
+                $messages = is_array($node->messages_config) ? $node->messages_config : [];
+
+                return collect($messages)
+                    ->filter(fn ($message) => is_array($message))
+                    ->filter(function (array $message): bool {
+                        $mode = $message['mode'] ?? 'template';
+
+                        return $mode === 'template';
+                    })
+                    ->pluck('prompt_template_id')
+                    ->filter()
+                    ->values();
+            })
+            ->unique()
+            ->values()
+            ->all();
+
+        $latestVersionsByTemplate = $this->latestPromptVersions($templateIds);
+
         return $nodes
-            ->map(function (ChainNode $node): array {
+            ->map(function (ChainNode $node) use ($latestVersionsByTemplate): array {
+                $messagesConfig = is_array($node->messages_config) ? $node->messages_config : [];
+
+                $messagesConfig = collect($messagesConfig)
+                    ->map(function ($message) use ($latestVersionsByTemplate) {
+                        if (! is_array($message)) {
+                            return $message;
+                        }
+
+                        $mode = $message['mode'] ?? 'template';
+                        if ($mode !== 'template') {
+                            return $message;
+                        }
+
+                        if (! empty($message['prompt_version_id'])) {
+                            return $message;
+                        }
+
+                        $templateId = $message['prompt_template_id'] ?? null;
+                        if (! $templateId) {
+                            return $message;
+                        }
+
+                        $message['prompt_version_id'] = $latestVersionsByTemplate[$templateId] ?? null;
+
+                        return $message;
+                    })
+                    ->values()
+                    ->all();
+
                 return [
                     'id' => $node->id,
                     'name' => $node->name,
                     'provider_credential_id' => $node->provider_credential_id ?? null,
                     'model_name' => $node->model_name,
                     'model_params' => $node->model_params,
-                    'messages_config' => $node->messages_config,
+                    'messages_config' => $messagesConfig,
                     'output_schema' => $node->output_schema,
                     'stop_on_validation_error' => $node->stop_on_validation_error,
                     'order_index' => $node->order_index,
@@ -85,6 +136,30 @@ class ChainSnapshotLoader
             })
             ->sortBy('order_index')
             ->values()
+            ->all();
+    }
+
+    /**
+     * @param array<int, int> $templateIds
+     * @return array<int, int|null>
+     */
+    private function latestPromptVersions(array $templateIds): array
+    {
+        if (! $templateIds) {
+            return [];
+        }
+
+        return PromptVersion::query()
+            ->select('id', 'prompt_template_id', 'version')
+            ->where('tenant_id', currentTenantId())
+            ->whereIn('prompt_template_id', $templateIds)
+            ->orderBy('prompt_template_id')
+            ->orderByDesc('version')
+            ->get()
+            ->unique('prompt_template_id')
+            ->mapWithKeys(fn (PromptVersion $version) => [
+                $version->prompt_template_id => (int) $version->id,
+            ])
             ->all();
     }
 }

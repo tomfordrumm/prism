@@ -108,10 +108,19 @@ class RunViewService
 
         $snapshot = is_array($run->chain_snapshot) ? $run->chain_snapshot : [];
 
-        $targetPromptVersionIds = $this->targetPromptResolver->collectTargetVersionIdsFromSnapshot($snapshot);
-        if (! $targetPromptVersionIds) {
-            $targetPromptVersionIds = $this->targetPromptResolver->collectTargetVersionIds($stepsCollection);
-        }
+        $stepVersionIds = $stepsCollection
+            ->flatMap(fn (RunStep $step) => [
+                $step->prompt_version_id,
+                $step->system_prompt_version_id,
+                $step->user_prompt_version_id,
+            ])
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $targetPromptVersionIds = $stepVersionIds
+            ?: $this->targetPromptResolver->collectTargetVersionIdsFromSnapshot($snapshot);
 
         $promptVersions = PromptVersion::query()
             ->whereIn('id', $targetPromptVersionIds)

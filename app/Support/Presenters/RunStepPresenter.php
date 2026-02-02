@@ -29,7 +29,13 @@ class RunStepPresenter
 
         $targetPromptVersionId = $step->prompt_version_id
             ? (int) $step->prompt_version_id
-            : $this->targetPromptResolver->fromMessagesConfig($messagesConfig);
+            : ($step->system_prompt_version_id
+                ? (int) $step->system_prompt_version_id
+                : ($step->user_prompt_version_id ? (int) $step->user_prompt_version_id : null));
+
+        if (! $targetPromptVersionId) {
+            $targetPromptVersionId = $this->targetPromptResolver->fromMessagesConfig($messagesConfig);
+        }
         $targetTemplateId = null;
         $targetPromptContent = null;
         if ($targetPromptVersionId) {
@@ -69,6 +75,8 @@ class RunStepPresenter
             'target_prompt_version_id' => $targetPromptVersionId,
             'target_prompt_template_id' => $targetTemplateId,
             'target_prompt_content' => $targetPromptContent,
+            'system_prompt_version_id' => $step->system_prompt_version_id,
+            'user_prompt_version_id' => $step->user_prompt_version_id,
             'prompt_targets' => $promptTargets,
             'request_payload' => $step->request_payload,
             'response_raw' => $step->response_raw,
@@ -101,15 +109,24 @@ class RunStepPresenter
      */
     private function buildPromptTargets(RunStep $step, array $messagesConfig, Collection $promptVersions): array
     {
-        if (empty($messagesConfig) && $step->prompt_version_id) {
-            return [
-                'system' => null,
-                'user' => $this->resolvePromptTarget((int) $step->prompt_version_id, $promptVersions),
-            ];
+        $systemVersionId = $step->system_prompt_version_id
+            ? (int) $step->system_prompt_version_id
+            : null;
+        $userVersionId = $step->user_prompt_version_id
+            ? (int) $step->user_prompt_version_id
+            : null;
+
+        if (! $systemVersionId) {
+            $systemVersionId = $this->targetPromptResolver->fromMessagesConfigForRole($messagesConfig, 'system');
         }
 
-        $systemVersionId = $this->targetPromptResolver->fromMessagesConfigForRole($messagesConfig, 'system');
-        $userVersionId = $this->targetPromptResolver->fromMessagesConfigForRole($messagesConfig, 'user');
+        if (! $userVersionId) {
+            if (! $messagesConfig && $step->prompt_version_id) {
+                $userVersionId = (int) $step->prompt_version_id;
+            } else {
+                $userVersionId = $this->targetPromptResolver->fromMessagesConfigForRole($messagesConfig, 'user');
+            }
+        }
 
         return [
             'system' => $this->resolvePromptTarget($systemVersionId, $promptVersions),

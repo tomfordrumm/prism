@@ -84,6 +84,8 @@ class RunStepRunner
             $totalTokensIn += $responseDto?->tokensIn() ?? 0;
             $totalTokensOut += $responseDto?->tokensOut() ?? 0;
 
+            $promptVersionIds = $this->resolvePromptVersionIds($node, $promptVersions);
+
             $this->runStepRecorder->record(
                 $run,
                 $node,
@@ -94,8 +96,10 @@ class RunStepRunner
                 $validationErrors,
                 $status,
                 $durationMs,
-                $this->resolveTargetPromptVersionId($node, $promptVersions),
-                $node->provider_credential_id
+                $promptVersionIds['target'],
+                $node->provider_credential_id,
+                $promptVersionIds['system'],
+                $promptVersionIds['user']
             );
 
             $stepKey = $this->stepKey($node);
@@ -127,14 +131,34 @@ class RunStepRunner
     /**
      * @param array{by_id: Collection<int, \App\Models\PromptVersion>, by_template: Collection<int, \App\Models\PromptVersion>} $promptVersions
      */
-    private function resolveTargetPromptVersionId(ChainNode $node, array $promptVersions): ?int
+    private function resolvePromptVersionIds(ChainNode $node, array $promptVersions): array
     {
         $configs = collect($node->messages_config ?? []);
 
-        $target = $configs->firstWhere('role', 'system')
-            ?? $configs->firstWhere('role', 'user');
+        $systemId = $this->resolveVersionIdForRole($configs, $promptVersions, 'system');
+        $userId = $this->resolveVersionIdForRole($configs, $promptVersions, 'user');
+        $target = $systemId ?? $userId;
+
+        return [
+            'system' => $systemId,
+            'user' => $userId,
+            'target' => $target,
+        ];
+    }
+
+    private function resolveVersionIdForRole(
+        Collection $configs,
+        array $promptVersions,
+        string $role
+    ): ?int {
+        $target = $configs->firstWhere('role', $role);
 
         if (! is_array($target)) {
+            return null;
+        }
+
+        $mode = Arr::get($target, 'mode', 'template');
+        if ($mode !== 'template') {
             return null;
         }
 

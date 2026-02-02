@@ -103,6 +103,7 @@ class OpenAiProviderClient implements LlmProviderClientInterface
         /** @var array $metadata */
         $metadata = $credential->metadata ?? [];
         $baseUrl = $metadata['base_url'] ?? ($metadata['baseUrl'] ?? null);
+        $baseUrl = $this->normalizeBaseUrl($baseUrl);
         if ($baseUrl) {
             $factory = $factory->withBaseUri($baseUrl);
         }
@@ -135,6 +136,19 @@ class OpenAiProviderClient implements LlmProviderClientInterface
                 );
             };
         };
+    }
+
+    private function normalizeBaseUrl(mixed $baseUrl): ?string
+    {
+        if (! is_string($baseUrl) || $baseUrl === '') {
+            return null;
+        }
+
+        $normalized = rtrim(trim($baseUrl), '/');
+        $normalized = preg_replace('#/(v1/)?chat/completions$#', '', $normalized) ?? $normalized;
+        $normalized = preg_replace('#/(v1/)?responses$#', '', $normalized) ?? $normalized;
+
+        return $normalized;
     }
 
     private function mapModelList($response): array

@@ -20,7 +20,9 @@ class RunStepRecorder
         string $status,
         int $durationMs,
         ?int $promptVersionId = null,
-        ?int $providerCredentialId = null
+        ?int $providerCredentialId = null,
+        ?int $systemPromptVersionId = null,
+        ?int $userPromptVersionId = null
     ): void {
         $usage = $responseDto ? $responseDto->usage : [];
         $meta = $responseDto ? $responseDto->meta : [];
@@ -31,6 +33,8 @@ class RunStepRecorder
             'chain_node_id' => $node->id,
             'provider_credential_id' => $providerCredentialId,
             'prompt_version_id' => $promptVersionId,
+            'system_prompt_version_id' => $systemPromptVersionId,
+            'user_prompt_version_id' => $userPromptVersionId,
             'order_index' => $node->order_index,
             'request_payload' => [
                 'model' => $node->model_name,

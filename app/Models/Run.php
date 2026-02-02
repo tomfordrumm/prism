@@ -61,4 +61,9 @@ class Run extends Model
     {
         return $this->hasMany(Feedback::class);
     }
+
+    public function promptConversations(): HasMany
+    {
+        return $this->hasMany(PromptConversation::class);
+    }
 }

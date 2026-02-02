@@ -115,6 +115,19 @@ class FeedbackSubmissionService
             return [(int) $runStep->prompt_version_id];
         }
 
+        $stepVersionIds = collect([
+            $runStep->system_prompt_version_id,
+            $runStep->user_prompt_version_id,
+        ])
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
+
+        if ($stepVersionIds) {
+            return $stepVersionIds;
+        }
+
         $chainNode = $runStep->chainNode;
         $messagesConfig = $chainNode ? (array) ($chainNode->messages_config ?? []) : [];
 
@@ -135,10 +148,20 @@ class FeedbackSubmissionService
     {
         $templateIds = [];
 
-        if ($runStep->prompt_version_id) {
+        $stepVersionIds = collect([
+            $runStep->system_prompt_version_id,
+            $runStep->user_prompt_version_id,
+            $runStep->prompt_version_id,
+        ])
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
+
+        foreach ($stepVersionIds as $versionId) {
             $version = PromptVersion::query()
                 ->where('tenant_id', currentTenantId())
-                ->find($runStep->prompt_version_id);
+                ->find($versionId);
             if ($version) {
                 $templateIds[] = (int) $version->prompt_template_id;
             }

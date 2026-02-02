@@ -45,4 +45,14 @@ class TargetPromptResolverTest extends TestCase
 
         $this->assertSame(7, $resolver->fromRunStep($step));
     }
+
+    public function testFromRunStepPrefersStepVersionIds(): void
+    {
+        $resolver = new TargetPromptResolver();
+
+        $step = new RunStep();
+        $step->setAttribute('system_prompt_version_id', 12);
+
+        $this->assertSame(12, $resolver->fromRunStep($step));
+    }
 }

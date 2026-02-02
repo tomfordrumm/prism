@@ -1,17 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { router, useForm } from '@inertiajs/vue3';
+import { router } from '@inertiajs/vue3';
 import { diffLines } from 'diff';
 import Button from 'primevue/button';
-import Select from 'primevue/select';
 import Icon from '@/components/Icon.vue';
-import InputError from '@/components/InputError.vue';
-import { Label } from '@/components/ui/label';
+import PromptChat from '@/components/prompts/PromptChat.vue';
 import type {
-    RunModelOption,
-    RunProviderCredentialOption,
     RunStepPayload,
-    RunFeedbackItem,
 } from '@/types/runs';
 
 interface Props {
@@ -25,73 +20,19 @@ interface Props {
         prompt_template_id: number | null;
         content: string | null;
     } | null;
-    providerCredentials: RunProviderCredentialOption[];
-    providerCredentialModels: Record<number, RunModelOption[]>;
-    defaultProviderCredentialId?: number | null;
-    defaultModelName?: string | null;
 }
 
 const props = defineProps<Props>();
 
 const emit = defineEmits<{
     (event: 'update:open', value: boolean): void;
-    (event: 'feedback-added', payload: { stepId: number; feedback: RunFeedbackItem }): void;
 }>();
 
-const feedbackForm = useForm({
-    rating: null as number | null,
-    comment: '',
-    request_suggestion: true,
-    provider_credential_id: null as number | null,
-    model_name: '',
-    target_prompt_version_id: null as number | null,
-});
-
-const feedbackInput = ref('');
-const feedbackThread = ref<{ id: number; role: 'user' | 'assistant'; text: string; createdAt: string }[]>([]);
-const feedbackItems = ref<RunFeedbackItem[]>([]);
-const isGenerating = ref(false);
 const diffViewMode = ref<'diff' | 'final'>('diff');
-const getCookie = (name: string) =>
-    document.cookie
-        .split('; ')
-        .find((row) => row.startsWith(`${name}=`))
-        ?.split('=')[1] ?? '';
-
-const modelOptions = computed(() => {
-    const credentialId = feedbackForm.provider_credential_id;
-
-    if (!credentialId) return [];
-
-    return props.providerCredentialModels[credentialId] ?? [];
-});
+const suggestedPromptContent = ref('');
+const isSubmitting = ref(false);
 
 const targetPrompt = computed(() => props.targetPrompt);
-
-const handleProviderChange = () => {
-    if (!feedbackForm.provider_credential_id) {
-        feedbackForm.model_name = '';
-        return;
-    }
-
-    const firstModel = modelOptions.value[0];
-    feedbackForm.model_name = firstModel ? firstModel.id : '';
-};
-
-watch(
-    () => feedbackForm.request_suggestion,
-    (enabled) => {
-        if (!enabled) {
-            feedbackForm.provider_credential_id = null;
-            feedbackForm.model_name = '';
-            return;
-        }
-
-        if (!feedbackForm.provider_credential_id) {
-            selectDefaultImprover();
-        }
-    },
-);
 
 const activeStepMeta = computed(() => {
     const step = props.step;
@@ -111,22 +52,6 @@ const activeStepMeta = computed(() => {
 });
 
 const currentPromptContent = computed(() => props.targetPrompt?.content || '');
-
-const latestSuggestion = computed(() => {
-    if (!feedbackItems.value.length) return null;
-    const targetVersionId = props.targetPrompt?.prompt_version_id ?? null;
-    const feedbackWithSuggestion = [...feedbackItems.value]
-        .reverse()
-        .find((fb) =>
-            fb.suggested_prompt_content &&
-            (targetVersionId ? fb.target_prompt_version_id === targetVersionId : true),
-        );
-    return feedbackWithSuggestion ?? null;
-});
-
-const suggestedPromptContent = computed(
-    () => latestSuggestion.value?.suggested_prompt_content || '',
-);
 
 type DiffLine = {
     type: 'add' | 'remove' | 'context';
@@ -189,122 +114,28 @@ const diffPreviewLines = computed(() => {
     return buildDiffLines(currentPromptContent.value, suggestedPromptContent.value);
 });
 
-const submitFeedback = async () => {
-    if (!props.step) return;
-    if (!feedbackForm.comment.trim()) {
-        feedbackForm.setError('comment', 'Provide feedback before generating.');
-        return;
-    }
-
-    feedbackForm.target_prompt_version_id = props.targetPrompt?.prompt_version_id ?? null;
-
-    isGenerating.value = true;
-    try {
-        const csrfToken =
-            document
-                .querySelector('meta[name="csrf-token"]')
-                ?.getAttribute('content') ||
-            decodeURIComponent(getCookie('XSRF-TOKEN'));
-        const response = await fetch(`/runs/${props.runId}/steps/${props.step.id}/feedback`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Accept: 'application/json',
-                ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
-            },
-            credentials: 'same-origin',
-            body: JSON.stringify({
-                rating: feedbackForm.rating,
-                comment: feedbackForm.comment,
-                request_suggestion: feedbackForm.request_suggestion,
-                provider_credential_id: feedbackForm.provider_credential_id,
-                model_name: feedbackForm.model_name,
-                target_prompt_version_id: feedbackForm.target_prompt_version_id,
-            }),
-        });
-
-        if (!response.ok) {
-            const payload = await response.json().catch(() => null);
-            const errors = payload?.errors;
-            if (errors) {
-                Object.entries(errors).forEach(([key, value]) => {
-                    const message = Array.isArray(value) ? value[0] : value;
-                    feedbackForm.setError(key, message as string);
-                });
-            } else if (payload?.message) {
-                feedbackForm.setError('comment', payload.message);
-            } else {
-                feedbackForm.setError('comment', 'Failed to submit feedback.');
-            }
-            return;
-        }
-
-        const payload = await response.json().catch(() => null);
-        const feedback = payload?.feedback as RunFeedbackItem | undefined;
-        if (feedback) {
-            feedbackItems.value = [...feedbackItems.value, feedback];
-            emit('feedback-added', { stepId: props.step.id, feedback });
-            const assistantText =
-                feedback.analysis ||
-                (feedback.suggested_prompt_content ? 'Suggestion ready.' : '');
-            if (assistantText) {
-                feedbackThread.value = [
-                    ...feedbackThread.value,
-                    {
-                        id: Date.now(),
-                        role: 'assistant',
-                        text: assistantText,
-                        createdAt: new Date().toLocaleTimeString(),
-                    },
-                ];
-            }
-        }
-        feedbackInput.value = '';
-        feedbackForm.clearErrors();
-    } finally {
-        isGenerating.value = false;
-    }
-};
-
-const handleGenerateSuggestion = () => {
-    if (!props.targetPrompt?.prompt_version_id) {
-        feedbackForm.setError(
-            'comment',
-            'Selected prompt is not available for improvements.',
-        );
-        return;
-    }
-
-    if (!feedbackInput.value.trim()) {
-        feedbackForm.setError('comment', 'Provide feedback before generating.');
-        return;
-    }
-
-    feedbackForm.clearErrors('comment');
-    feedbackForm.comment = feedbackInput.value;
-    feedbackThread.value = [
-        ...feedbackThread.value,
-        {
-            id: Date.now(),
-            role: 'user',
-            text: feedbackInput.value,
-            createdAt: new Date().toLocaleTimeString(),
-        },
-    ];
-    submitFeedback();
+const handleChatSuggestion = (payload: { suggestedPrompt?: string | null; analysis?: string | null }) => {
+    suggestedPromptContent.value = payload.suggestedPrompt ?? '';
 };
 
 const applySuggestion = () => {
-    const step = props.step;
-    const feedback = latestSuggestion.value;
     const targetTemplateId = props.targetPrompt?.prompt_template_id ?? null;
-    if (!step || !feedback || !targetTemplateId) return;
+    if (!targetTemplateId || !suggestedPromptContent.value) return;
 
     router.post(
-        `/projects/${props.projectUuid}/prompts/${targetTemplateId}/versions/from-feedback`,
-        { feedback_id: feedback.id },
+        `/projects/${props.projectUuid}/prompts/${targetTemplateId}/versions`,
+        {
+            content: suggestedPromptContent.value,
+            changelog: 'Created from feedback chat',
+        },
         {
             preserveScroll: true,
+            onStart: () => {
+                isSubmitting.value = true;
+            },
+            onFinish: () => {
+                isSubmitting.value = false;
+            },
             onSuccess: () => {
                 emit('update:open', false);
             },
@@ -312,60 +143,39 @@ const applySuggestion = () => {
     );
 };
 
-const selectDefaultImprover = () => {
-    const defaultCredentialId = props.defaultProviderCredentialId;
-    const defaultModelName = props.defaultModelName;
+const saveAndRun = () => {
+    const targetTemplateId = props.targetPrompt?.prompt_template_id ?? null;
+    if (!targetTemplateId || !suggestedPromptContent.value) return;
 
-    if (defaultCredentialId && defaultModelName) {
-        const availableModels = props.providerCredentialModels[defaultCredentialId] ?? [];
-        const hasModel = availableModels.some((model) => model.id === defaultModelName);
-        feedbackForm.provider_credential_id = defaultCredentialId;
-        feedbackForm.model_name = hasModel ? defaultModelName : availableModels[0]?.id ?? '';
-        return;
-    }
-
-    if (defaultCredentialId) {
-        const defaultModels = props.providerCredentialModels[defaultCredentialId] ?? [];
-        feedbackForm.provider_credential_id = defaultCredentialId;
-        feedbackForm.model_name = defaultModels[0]?.id ?? '';
-        return;
-    }
-
-    if (!props.providerCredentials.length) {
-        feedbackForm.provider_credential_id = null;
-        feedbackForm.model_name = '';
-        return;
-    }
-
-    const preferredTokens = ['gpt-4o', 'claude-3.5', 'claude-3-5', 'sonnet', 'opus'];
-
-    for (const credential of props.providerCredentials) {
-        const models = props.providerCredentialModels[credential.value] ?? [];
-        const preferred = models.find((model) =>
-            preferredTokens.some((token) => model.id.toLowerCase().includes(token)),
-        );
-        if (preferred) {
-            feedbackForm.provider_credential_id = credential.value;
-            feedbackForm.model_name = preferred.id;
-            return;
-        }
-    }
-
-    const fallbackCredential = props.providerCredentials[0];
-    const fallbackModels = props.providerCredentialModels[fallbackCredential.value] ?? [];
-    feedbackForm.provider_credential_id = fallbackCredential.value;
-    feedbackForm.model_name = fallbackModels[0]?.id ?? '';
+    router.post(
+        `/projects/${props.projectUuid}/prompts/${targetTemplateId}/versions/run`,
+        {
+            content: suggestedPromptContent.value,
+            changelog: 'Created from feedback chat',
+            run_id: props.runId,
+        },
+        {
+            preserveScroll: true,
+            onStart: () => {
+                isSubmitting.value = true;
+            },
+            onFinish: () => {
+                isSubmitting.value = false;
+            },
+            onSuccess: () => {
+                emit('update:open', false);
+            },
+        },
+    );
 };
 
+const conversationContextKey = computed(
+    () => `${props.step?.id ?? 'none'}-${props.targetPrompt?.prompt_version_id ?? 'none'}`,
+);
+
 const resetFeedbackState = () => {
-    feedbackForm.reset();
-    feedbackForm.request_suggestion = true;
-    feedbackInput.value = '';
-    feedbackThread.value = [];
-    feedbackItems.value = props.step?.feedback ? [...props.step.feedback] : [];
+    suggestedPromptContent.value = '';
     diffViewMode.value = 'diff';
-    feedbackForm.target_prompt_version_id = props.targetPrompt?.prompt_version_id ?? null;
-    selectDefaultImprover();
 };
 
 watch(
@@ -373,14 +183,6 @@ watch(
     ([open]) => {
         if (!open) return;
         resetFeedbackState();
-    },
-);
-
-watch(
-    () => props.step?.feedback,
-    (feedback) => {
-        if (!feedback) return;
-        feedbackItems.value = [...feedback];
     },
 );
 </script>
@@ -419,92 +221,22 @@ watch(
                     </div>
                 </div>
 
-                <div class="flex-1 min-h-0 overflow-y-auto p-6">
-                    <div class="space-y-4">
-                        <div
-                            v-for="message in feedbackThread"
-                            :key="message.id"
-                            class="rounded-lg px-3 py-2 text-sm shadow-sm"
-                            :class="message.role === 'assistant' ? 'bg-white text-foreground' : 'bg-primary/10 text-foreground'"
-                        >
-                            <div class="text-xs text-muted-foreground">
-                                {{ message.role === 'assistant' ? 'Model' : 'You' }} · {{ message.createdAt }}
-                            </div>
-                            <div class="mt-1 whitespace-pre-wrap">{{ message.text }}</div>
-                        </div>
-                        <div v-if="isGenerating" class="flex items-center gap-2 text-xs text-muted-foreground">
-                            <span class="h-2 w-2 animate-pulse rounded-full bg-emerald-500"></span>
-                            Analyzing...
-                        </div>
-                    </div>
-                </div>
-
-                <div class="flex flex-none flex-col gap-3 border-t bg-gray-50 p-6">
-                    <Label for="fb_comment">Describe the issue</Label>
-                    <textarea
-                        id="fb_comment"
-                        v-model="feedbackInput"
-                        rows="3"
-                        class="max-h-32 w-full resize-none rounded-md border border-input bg-white px-4 py-2 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                        placeholder="Too generic, didn't mention the user's context, missed key requirements..."
-                    ></textarea>
-                    <InputError :message="feedbackForm.errors.comment" />
-                    <div class="grid gap-3">
-                        <div class="grid gap-2 lg:grid-cols-2">
-                            <div class="grid gap-2">
-                                <Label for="fb_provider_credential_id">Provider</Label>
-                                <Select
-                                    inputId="fb_provider_credential_id"
-                                    :model-value="feedbackForm.provider_credential_id"
-                                    :options="providerCredentials"
-                                    optionLabel="label"
-                                    optionValue="value"
-                                    placeholder="Select provider"
-                                    filter
-                                    :filterFields="['label']"
-                                    class="w-full"
-                                    @update:model-value="(value) => { feedbackForm.provider_credential_id = value; handleProviderChange(); }"
-                                />
-                                <InputError :message="feedbackForm.errors.provider_credential_id" />
-                            </div>
-
-                            <div class="grid gap-2">
-                                <Label for="fb_model_name">Model</Label>
-                                <Select
-                                    inputId="fb_model_name"
-                                    :model-value="feedbackForm.model_name"
-                                    :options="modelOptions"
-                                    optionLabel="display_name"
-                                    optionValue="id"
-                                    placeholder="Select model"
-                                    filter
-                                    :filterFields="['display_name', 'name']"
-                                    class="w-full"
-                                    :disabled="!feedbackForm.provider_credential_id"
-                                    @update:model-value="(value) => { feedbackForm.model_name = value; }"
-                                />
-                                <p
-                                    v-if="feedbackForm.provider_credential_id && !modelOptions.length"
-                                    class="text-xs text-muted-foreground"
-                                >
-                                    No models available for this credential yet.
-                                </p>
-                                <InputError :message="feedbackForm.errors.model_name" />
-                            </div>
-                        </div>
-
-                        <div class="flex justify-end gap-2">
-                            <Button
-                                :disabled="isGenerating || !targetPrompt?.prompt_version_id"
-                                @click="handleGenerateSuggestion"
-                            >
-                                Generate
-                            </Button>
-                        </div>
-                        <p v-if="!targetPrompt?.prompt_version_id" class="text-xs text-muted-foreground">
-                            This prompt is inline-only and cannot be improved as a version.
-                        </p>
-                    </div>
+                <div class="flex-1 min-h-0 p-6">
+                    <PromptChat
+                        class="h-full"
+                        :project-uuid="projectUuid"
+                        type="run_feedback"
+                        :run-id="runId"
+                        :run-step-id="step?.id ?? null"
+                        :target-prompt-version-id="targetPrompt?.prompt_version_id ?? null"
+                        :active="open"
+                        :context-key="conversationContextKey"
+                        :show-header="false"
+                        :show-welcome="false"
+                        placeholder="Describe what should be improved..."
+                        max-width-class="max-w-full"
+                        @suggestion="handleChatSuggestion"
+                    />
                 </div>
             </div>
 
@@ -530,16 +262,35 @@ watch(
                         </Button>
                         <Button
                             outlined
-                            :disabled="!suggestedPromptContent"
-                            :class="suggestedPromptContent ? 'border-emerald-500 text-emerald-700' : 'text-muted-foreground'"
+                            :disabled="!suggestedPromptContent || !targetPrompt?.prompt_template_id || isSubmitting"
+                            :class="
+                                suggestedPromptContent && targetPrompt?.prompt_template_id
+                                    ? 'border-emerald-500 text-emerald-700'
+                                    : 'text-muted-foreground'
+                            "
                             @click="applySuggestion"
                         >
                             Accept changes and save as new version
+                        </Button>
+                        <Button
+                            outlined
+                            :disabled="!suggestedPromptContent || !targetPrompt?.prompt_template_id || isSubmitting"
+                            :class="
+                                suggestedPromptContent && targetPrompt?.prompt_template_id
+                                    ? 'border-blue-500 text-blue-700'
+                                    : 'text-muted-foreground'
+                            "
+                            @click="saveAndRun"
+                        >
+                            Save and run
                         </Button>
                     </div>
                 </div>
 
                 <div class="flex-1 min-h-0 overflow-y-auto p-6 font-mono text-sm">
+                    <p v-if="!targetPrompt?.prompt_template_id" class="mb-3 text-xs text-muted-foreground">
+                        This prompt is inline-only and cannot be saved as a version.
+                    </p>
                     <div v-if="diffViewMode === 'final'">
                         <pre class="whitespace-pre-wrap">
 {{ suggestedPromptContent || 'Waiting for your feedback to analyze...' }}

@@ -55,4 +55,9 @@ class Project extends Model
     {
         return $this->hasMany(Run::class);
     }
+
+    public function promptConversations(): HasMany
+    {
+        return $this->hasMany(PromptConversation::class);
+    }
 }

@@ -59,4 +59,39 @@ class RunStepPresenterTest extends TestCase
         $this->assertSame(200, $presented['target_prompt_template_id']);
         $this->assertSame('Step One', $presented['chain_node']['name']);
     }
+
+    public function testPrefersStepPromptVersionsForTargets(): void
+    {
+        $resolver = new TargetPromptResolver();
+        $presenter = new RunStepPresenter($resolver);
+
+        $step = new RunStep();
+        $step->setAttribute('id', 9);
+        $step->setAttribute('order_index', 1);
+        $step->setAttribute('status', 'success');
+        $step->setAttribute('request_payload', []);
+        $step->setAttribute('response_raw', []);
+        $step->setAttribute('parsed_output', []);
+        $step->setAttribute('system_prompt_version_id', 12);
+        $step->setAttribute('user_prompt_version_id', 15);
+        $step->setRelation('feedback', collect());
+
+        $systemVersion = new PromptVersion();
+        $systemVersion->setAttribute('id', 12);
+        $systemVersion->setAttribute('prompt_template_id', 300);
+
+        $userVersion = new PromptVersion();
+        $userVersion->setAttribute('id', 15);
+        $userVersion->setAttribute('prompt_template_id', 301);
+
+        $promptVersions = new Collection([
+            $systemVersion->id => $systemVersion,
+            $userVersion->id => $userVersion,
+        ]);
+
+        $presented = $presenter->present($step, $promptVersions);
+
+        $this->assertSame(12, $presented['prompt_targets']['system']['prompt_version_id']);
+        $this->assertSame(15, $presented['prompt_targets']['user']['prompt_version_id']);
+    }
 }

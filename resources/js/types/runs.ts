@@ -40,6 +40,8 @@ export interface RunStepPayload {
     target_prompt_version_id?: number | null;
     target_prompt_template_id?: number | null;
     target_prompt_content?: string | null;
+    system_prompt_version_id?: number | null;
+    user_prompt_version_id?: number | null;
     prompt_targets?: {
         system: RunPromptTarget | null;
         user: RunPromptTarget | null;

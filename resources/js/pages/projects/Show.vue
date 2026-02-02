@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Icon from '@/components/Icon.vue';
 import Chart from 'primevue/chart';
-import { computed, nextTick, ref, watch } from 'vue';
+import PromptChat from '@/components/prompts/PromptChat.vue';
+import { computed, ref, watch } from 'vue';
 
 interface ProjectPayload {
     id: number;
@@ -29,8 +30,6 @@ const props = defineProps<{
     lastMonthTokens: number;
     promptChart?: ChartSeriesPayload | null;
     tokenChart?: ChartSeriesPayload | null;
-    promptIdeaSuggestion?: { suggestion?: string | null; analysis?: string | null } | null;
-    promptIdeaInput?: string | null;
 }>();
 
 interface ActivityItem {
@@ -168,17 +167,7 @@ const tokenChartOptions = {
     },
 };
 
-const promptIdeaForm = useForm({
-    idea: props.promptIdeaInput ?? '',
-});
-
-const hasConversation = computed(
-    () =>
-        Boolean(props.promptIdeaInput?.trim()) ||
-        promptIdeaForm.processing ||
-        Boolean(props.promptIdeaSuggestion),
-);
-const hasIdeaText = computed(() => promptIdeaForm.idea.trim().length > 0);
+const promptIdeaSuggestion = ref<{ suggestion?: string | null; analysis?: string | null } | null>(null);
 
 const savePromptForm = useForm({
     name: '',
@@ -187,27 +176,12 @@ const savePromptForm = useForm({
     initial_changelog: 'Created from idea',
 });
 
-const submitPromptIdea = () => {
-    promptIdeaForm.post(`/projects/${props.project.uuid}/prompt-idea`, {
-        preserveScroll: true,
-    });
+const handlePromptChatSuggestion = (payload: { suggestedPrompt?: string | null; analysis?: string | null }) => {
+    promptIdeaSuggestion.value = {
+        suggestion: payload.suggestedPrompt ?? null,
+        analysis: payload.analysis ?? null,
+    };
 };
-
-const ideaInputRef = ref<HTMLTextAreaElement | null>(null);
-const autoResizeIdeaInput = () => {
-    const el = ideaInputRef.value;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
-};
-
-watch(
-    () => promptIdeaForm.idea,
-    () => {
-        nextTick(autoResizeIdeaInput);
-    },
-    { immediate: true },
-);
 
 const submitSavePrompt = () => {
     if (!savePromptForm.initial_content) return;
@@ -215,7 +189,7 @@ const submitSavePrompt = () => {
 };
 
 watch(
-    () => props.promptIdeaSuggestion?.suggestion,
+    () => promptIdeaSuggestion.value?.suggestion,
     (suggestion) => {
         if (!suggestion) return;
         savePromptForm.initial_content = suggestion;
@@ -350,119 +324,51 @@ watch(
             </div>
 
             <div class="flex flex-1 flex-col gap-8">
-                <div class="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 pt-2">
-                    <div
-                        class="space-y-4 transition-all duration-300"
-                        :class="hasConversation ? 'pointer-events-none opacity-0 -translate-y-3 max-h-0 overflow-hidden' : 'opacity-100'"
-                    >
-                        <div class="flex items-center gap-2">
-                            <Icon name="sparkles" class="h-5 w-5 text-primary" />
-                            <h2 class="text-2xl font-semibold text-foreground">Improve your thoughts into a prompt</h2>
-                        </div>
-                        <div class="flex items-start gap-3">
-                            <div class="mt-1 flex h-9 w-9 items-center justify-center rounded-full bg-primary/10 text-primary">
-                                <Icon name="sparkles" class="h-4 w-4" />
-                            </div>
-                            <div class="rounded-2xl rounded-tl-sm bg-slate-50 px-4 py-2 text-sm text-foreground">
-                                Share your raw idea and I’ll convert it into a clean, ready-to-run prompt.
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="flex-1 space-y-4 overflow-y-auto pr-1">
-                        <div v-if="promptIdeaInput" class="flex items-start justify-end gap-3">
-                            <div class="rounded-2xl rounded-tr-sm bg-primary/10 px-4 py-2 text-sm text-foreground">
-                                {{ promptIdeaInput }}
-                            </div>
-                            <div class="mt-1 flex h-8 w-8 items-center justify-center rounded-full bg-muted text-muted-foreground">
-                                <Icon name="user" class="h-4 w-4" />
-                            </div>
-                        </div>
-
-                        <div v-if="promptIdeaForm.processing" class="flex items-start gap-3">
-                            <div class="mt-1 flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
-                                <Icon name="sparkles" class="h-4 w-4" />
-                            </div>
-                            <div class="rounded-2xl rounded-tl-sm bg-slate-50 px-4 py-2 text-sm text-muted-foreground">
-                                Analyzing your idea...
-                            </div>
-                        </div>
-
-                        <div v-if="promptIdeaSuggestion" class="flex items-start gap-3">
-                            <div class="mt-1 flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
-                                <Icon name="sparkles" class="h-4 w-4" />
-                            </div>
-                            <div class="w-full rounded-2xl rounded-tl-sm bg-slate-50 px-4 py-3 text-sm text-foreground">
-                                <div class="text-xs font-semibold uppercase text-muted-foreground">Improved prompt</div>
-                                <pre class="mt-2 whitespace-pre-wrap text-sm text-foreground">
+                <PromptChat
+                    class="flex-1"
+                    :project-uuid="project.uuid"
+                    type="idea"
+                    :title="'Improve your thoughts into a prompt'"
+                    :welcome="'Share your raw idea and I’ll convert it into a clean, ready-to-run prompt.'"
+                    placeholder="Спросите что-нибудь..."
+                    max-width-class="max-w-5xl"
+                    @suggestion="handlePromptChatSuggestion"
+                >
+                    <template #after-messages>
+                        <div v-if="promptIdeaSuggestion" class="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-foreground">
+                            <div class="text-xs font-semibold uppercase text-muted-foreground">Improved prompt</div>
+                            <pre class="mt-2 whitespace-pre-wrap text-sm text-foreground">
 {{ promptIdeaSuggestion.suggestion || 'No suggestion yet.' }}
-                                </pre>
-                                <div v-if="promptIdeaSuggestion.analysis" class="mt-3 text-sm text-muted-foreground">
-                                    {{ promptIdeaSuggestion.analysis }}
+                            </pre>
+                            <div v-if="promptIdeaSuggestion.analysis" class="mt-3 text-sm text-muted-foreground">
+                                {{ promptIdeaSuggestion.analysis }}
+                            </div>
+                            <div class="mt-4 grid gap-3">
+                                <div class="grid gap-2">
+                                    <label
+                                        for="prompt_idea_name"
+                                        class="text-xs font-semibold uppercase text-muted-foreground"
+                                    >
+                                        Prompt name
+                                    </label>
+                                    <Input
+                                        id="prompt_idea_name"
+                                        v-model="savePromptForm.name"
+                                        placeholder="e.g. Idea prompt"
+                                    />
+                                    <p v-if="savePromptForm.errors.name" class="text-xs text-red-600">
+                                        {{ savePromptForm.errors.name }}
+                                    </p>
                                 </div>
-                                <div class="mt-4 grid gap-3">
-                                    <div class="grid gap-2">
-                                        <label
-                                            for="prompt_idea_name"
-                                            class="text-xs font-semibold uppercase text-muted-foreground"
-                                        >
-                                            Prompt name
-                                        </label>
-                                        <Input
-                                            id="prompt_idea_name"
-                                            v-model="savePromptForm.name"
-                                            placeholder="e.g. Idea prompt"
-                                        />
-                                        <p v-if="savePromptForm.errors.name" class="text-xs text-red-600">
-                                            {{ savePromptForm.errors.name }}
-                                        </p>
-                                    </div>
-                                    <div class="flex justify-end">
-                                        <Button :disabled="savePromptForm.processing" @click="submitSavePrompt">
-                                            Save as prompt
-                                        </Button>
-                                    </div>
+                                <div class="flex justify-end">
+                                    <Button :disabled="savePromptForm.processing" @click="submitSavePrompt">
+                                        Save as prompt
+                                    </Button>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                </div>
-
-                <div class="mt-auto pb-2">
-                    <form class="mx-auto w-full max-w-5xl rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm focus-within:border-slate-300 focus-within:ring-2 focus-within:ring-primary/10">
-                        <div class="flex items-center gap-3">
-                            <button
-                                type="button"
-                                class="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-400 transition hover:text-primary"
-                                aria-label="Attach file"
-                            >
-                                <Icon name="plus" class="h-4 w-4" />
-                            </button>
-                            <textarea
-                                id="prompt_idea_input"
-                                ref="ideaInputRef"
-                                v-model="promptIdeaForm.idea"
-                                rows="1"
-                                class="min-h-[28px] w-full resize-none bg-transparent text-sm text-foreground outline-none placeholder:text-slate-400 focus:outline-none"
-                                placeholder="Спросите что-нибудь..."
-                                @input="autoResizeIdeaInput"
-                            ></textarea>
-                            <button
-                                type="button"
-                                :disabled="promptIdeaForm.processing"
-                                class="inline-flex h-10 w-10 items-center justify-center rounded-full transition disabled:opacity-60"
-                                :class="hasIdeaText ? 'text-primary' : 'text-slate-400 hover:text-primary'"
-                                aria-label="Send message"
-                                @click="submitPromptIdea"
-                            >
-                                <Icon name="send" class="h-4 w-4" />
-                            </button>
-                        </div>
-                    </form>
-                    <p v-if="promptIdeaForm.errors.idea" class="mx-auto mt-2 w-full max-w-5xl text-xs text-red-600">
-                        {{ promptIdeaForm.errors.idea }}
-                    </p>
-                </div>
+                    </template>
+                </PromptChat>
             </div>
 
         </div>

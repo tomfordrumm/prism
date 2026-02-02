@@ -51,6 +51,14 @@ class TargetPromptResolver
             return (int) $runStep->prompt_version_id;
         }
 
+        if ($runStep->system_prompt_version_id) {
+            return (int) $runStep->system_prompt_version_id;
+        }
+
+        if ($runStep->user_prompt_version_id) {
+            return (int) $runStep->user_prompt_version_id;
+        }
+
         /** @var ChainNode|null $chainNode */
         $chainNode = $runStep->chainNode;
 
@@ -64,7 +72,11 @@ class TargetPromptResolver
     public function collectTargetVersionIds(Collection $steps): array
     {
         $directVersionIds = $steps
-            ->pluck('prompt_version_id')
+            ->flatMap(fn ($step) => [
+                $step->prompt_version_id,
+                $step->system_prompt_version_id,
+                $step->user_prompt_version_id,
+            ])
             ->filter()
             ->unique()
             ->values()
@@ -88,6 +100,10 @@ class TargetPromptResolver
         return collect($directVersionIds)
             ->merge($steps
                 ->flatMap(function ($step) {
+                    if ($step->system_prompt_version_id || $step->user_prompt_version_id) {
+                        return [];
+                    }
+
                     $messagesConfig = $step->chainNode ? (array) ($step->chainNode->messages_config ?? []) : [];
 
                     return [
