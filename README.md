@@ -1,6 +1,6 @@
 # PRISM — Prompt IDE for building, testing, and improving LLM prompts
 
-PRISM is an open-source Prompt IDE for prompt engineers and product teams. It helps you design prompt templates, run them through chains of LLM calls, test them across datasets, and iteratively improve them with AI-assisted feedback.
+PRISM is an open-source Prompt IDE for prompt engineers and product teams. It helps you design prompt templates, build agents (chatbots), run chains of LLM calls, test them across datasets, and iteratively improve prompts with AI-assisted feedback.
 
 ## Why PRISM
 
@@ -12,6 +12,7 @@ PRISM is an open-source Prompt IDE for prompt engineers and product teams. It he
 - Prompt templates with immutable versions and variable extraction.
 - Chains of LLM calls with per-step models, params, and schema validation.
 - Prompt runs without chains for quick iteration.
+- Agents for building chatbots with dedicated system prompts.
 - Dataset test cases with batch runs.
 - Run tracing: prompts, responses, tokens, timing, validation errors.
 - Feedback and AI-assisted prompt improvement in a guided chat flow.
@@ -44,6 +45,21 @@ What this does:
 Open:
 - App: http://localhost:8000
 - Vite HMR: http://localhost:5173
+
+## Quick Start (Screenshots)
+
+1. Register a new user.
+![Login](public/docs/0.1/images/login.png)
+
+2. Create at least one provider credential.
+![Providers](public/docs/0.1/images/providers.png)
+![Add provider](public/docs/0.1/images/add-provider.png)
+
+3. Set the default improvement model in System Settings.
+![System settings](public/docs/0.1/images/settings-system.png)
+
+4. Create prompts, agents, or chains, and run them on datasets.
+![Empty dashboard](public/docs/0.1/images/dashboard-empty.png)
 
 ## Configuration: LLM Credentials and Improvement Defaults
 

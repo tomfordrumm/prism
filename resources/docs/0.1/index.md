@@ -1,0 +1,8 @@
+- ## Get Started
+    - [Overview](/{{route}}/{{version}}/overview)
+    - [Quick Start](/{{route}}/{{version}}/quick-start)
+- ## Reference
+    - [Architecture](/{{route}}/{{version}}/architecture)
+    - [Conventions](/{{route}}/{{version}}/conventions)
+- ## Recipes
+    - [Standard Workflow](/{{route}}/{{version}}/recipes/standard_workflow)

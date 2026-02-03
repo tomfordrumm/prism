@@ -1,5 +1,0 @@
-- Multi-tenancy first: every tenant-owned query scopes by `tenant_id` (via `currentTenantId()` and ownership checks); controllers abort on cross-tenant access.
-- Thin controllers, fat services: controllers validate with FormRequests, assert tenant/project, then delegate to Actions/Services (e.g., `RunChainAction`, `ChainViewService`) for business logic.
-- Centralized LLM access: all provider calls go through `LlmService` → provider client (`OpenAiProviderClient`, `StubProviderClient`) returning `LlmResponseDto`; never call providers directly from controllers or Vue.
-- Immutable prompt versions: prompt edits create new `PromptVersion` records; message building and variable resolution go through `MessageBuilder`/`VariableResolver`, with schema validation handled by `SchemaValidator` and errors logged.
-- Frontend discipline: Vue components use `<script setup lang="ts">`, typed props/interfaces, Inertia forms/router for CRUD, and PrimeVue/Tailwind for layout; avoid `any`, keep state local or in composables.

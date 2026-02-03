@@ -2,6 +2,8 @@
 import AppLayout from '@/layouts/AppLayout.vue';
 import type { BreadcrumbItem } from '@/types';
 import { Head, useForm } from '@inertiajs/vue3';
+import Toast from 'primevue/toast';
+import { useToast } from 'primevue/usetoast';
 import Select from 'primevue/select';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -24,6 +26,7 @@ interface Props {
 }
 
 const props = defineProps<Props>();
+const toast = useToast();
 
 const form = useForm({
     improvement_provider_credential_id: props.settings.improvement_provider_credential_id,
@@ -43,6 +46,22 @@ const handleProviderChange = () => {
 const submit = () => {
     form.put('/settings/system', {
         preserveScroll: true,
+        onSuccess: () => {
+            toast.add({
+                severity: 'success',
+                summary: 'Settings saved',
+                detail: 'System settings updated.',
+                life: 3000,
+            });
+        },
+        onError: () => {
+            toast.add({
+                severity: 'error',
+                summary: 'Save failed',
+                detail: 'Please fix the errors and try again.',
+                life: 4000,
+            });
+        },
     });
 };
 
@@ -59,6 +78,7 @@ const breadcrumbs: BreadcrumbItem[] = [
 
     <AppLayout :breadcrumbs="breadcrumbs">
         <div class="flex flex-col gap-4 p-4">
+            <Toast />
             <div>
                 <h1 class="text-xl font-semibold text-foreground">System settings</h1>
                 <p class="text-sm text-muted-foreground">
