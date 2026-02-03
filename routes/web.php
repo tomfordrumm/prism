@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\AgentController;
+use App\Http\Controllers\AgentConversationController;
 use App\Http\Controllers\ChainController;
 use App\Http\Controllers\ChainNodeController;
 use App\Http\Controllers\DatasetController;
@@ -53,6 +55,22 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('/prompts/{promptTemplate}/versions/run', [PromptTemplateController::class, 'storeVersionAndRun'])->name('projects.prompts.versions.run');
         Route::post('/prompts/{promptTemplate}/run', [PromptRunController::class, 'store'])->name('projects.prompts.run');
         Route::post('/prompts/{promptTemplate}/run-dataset', [PromptRunController::class, 'runDataset'])->name('projects.prompts.run-dataset');
+
+        // Agents
+        Route::get('/agents', [AgentController::class, 'index'])->name('projects.agents.index');
+        Route::get('/agents/create', [AgentController::class, 'create'])->name('projects.agents.create');
+        Route::post('/agents', [AgentController::class, 'store'])->name('projects.agents.store');
+        Route::get('/agents/{agent}', [AgentController::class, 'show'])->name('projects.agents.show');
+        Route::get('/agents/{agent}/edit', [AgentController::class, 'edit'])->name('projects.agents.edit');
+        Route::put('/agents/{agent}', [AgentController::class, 'update'])->name('projects.agents.update');
+        Route::delete('/agents/{agent}', [AgentController::class, 'destroy'])->name('projects.agents.destroy');
+
+        // Agent Conversations
+        Route::get('/agents/{agent}/conversations', [AgentConversationController::class, 'index'])->name('projects.agents.conversations.index');
+        Route::post('/agents/{agent}/conversations', [AgentConversationController::class, 'store'])->name('projects.agents.conversations.store');
+        Route::get('/agents/{agent}/conversations/{conversation}', [AgentConversationController::class, 'show'])->name('projects.agents.conversations.show');
+        Route::delete('/agents/{agent}/conversations/{conversation}', [AgentConversationController::class, 'destroy'])->name('projects.agents.conversations.destroy');
+        Route::post('/agents/{agent}/conversations/{conversation}/messages', [AgentConversationController::class, 'storeMessage'])->name('projects.agents.conversations.messages.store');
 
         Route::get('/chains', [ChainController::class, 'index'])->name('projects.chains.index');
         Route::get('/chains/create', [ChainController::class, 'create'])->name('projects.chains.create');

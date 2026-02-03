@@ -19,6 +19,7 @@ import {
 import { urlIsActive } from '@/lib/utils';
 import { show as projectShow, store as projectsStore } from '@/routes/projects';
 import { index as projectPromptsIndex } from '@/routes/projects/prompts';
+import { index as projectAgentsIndex } from '@/routes/projects/agents';
 import { index as projectChainsIndex } from '@/routes/projects/chains';
 import { index as projectDatasetsIndex } from '@/routes/projects/datasets';
 import { index as projectRunsIndex } from '@/routes/projects/runs';
@@ -27,6 +28,7 @@ import type { AppPageProps, NavItem, ProjectSummary } from '@/types';
 import { Link, router, useForm, usePage } from '@inertiajs/vue3';
 import {
     BookOpen,
+    Bot,
     Database,
     FileText,
     Folder,
@@ -228,6 +230,11 @@ const projectNavItems = computed(() => {
             title: 'Prompts',
             href: projectPromptsIndex({ project: projectUuid }).url,
             icon: FileText,
+        },
+        {
+            title: 'Agents',
+            href: projectAgentsIndex({ project: projectUuid }).url,
+            icon: Bot,
         },
         {
             title: 'Chains',

@@ -4,7 +4,7 @@ import { router } from '@inertiajs/vue3';
 import { diffLines } from 'diff';
 import Button from 'primevue/button';
 import Icon from '@/components/Icon.vue';
-import PromptChat from '@/components/prompts/PromptChat.vue';
+import ChatUI from '@/components/chat/ChatUI.vue';
 import type {
     RunStepPayload,
 } from '@/types/runs';
@@ -222,7 +222,7 @@ watch(
                 </div>
 
                 <div class="flex-1 min-h-0 p-6">
-                    <PromptChat
+                    <ChatUI
                         class="h-full"
                         :project-uuid="projectUuid"
                         type="run_feedback"

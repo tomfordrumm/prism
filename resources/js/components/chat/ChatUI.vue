@@ -16,15 +16,18 @@ type ChatMessage = {
 
 type ConversationListItem = {
     id: number;
-    type: 'idea' | 'run_feedback';
+    type: 'idea' | 'run_feedback' | 'agent_chat';
     status: string;
     created_at: string;
     updated_at: string;
+    title?: string | null;
+    message_count?: number;
 };
 
 interface Props {
     projectUuid: string;
-    type: 'idea' | 'run_feedback';
+    type: 'idea' | 'run_feedback' | 'agent_chat';
+    agentId?: number | null;
     runId?: number | null;
     runStepId?: number | null;
     targetPromptVersionId?: number | null;
@@ -40,6 +43,20 @@ interface Props {
     showHistory?: boolean;
     conversations?: ConversationListItem[];
     originalPromptContent?: string;
+    // Agent-specific props
+    agentName?: string;
+    agentModel?: string;
+    agentDescription?: string | null;
+    agentTemperature?: number;
+    agentMaxTokens?: number | null;
+    agentMaxContextMessages?: number;
+    agentMessageCount?: number;
+    agentSystemPrompt?: string;
+    contextWarning?: {
+        current_messages: number;
+        max_messages: number;
+        will_truncate: boolean;
+    } | null;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -54,13 +71,25 @@ const props = withDefaults(defineProps<Props>(), {
     showHistory: false,
     conversations: () => [],
     originalPromptContent: '',
+    agentId: null,
+    agentName: '',
+    agentModel: '',
+    agentDescription: null,
+    agentTemperature: 0.7,
+    agentMaxTokens: null,
+    agentMaxContextMessages: 10,
+    agentMessageCount: 0,
+    agentSystemPrompt: '',
+    contextWarning: null,
 });
 
 const emit = defineEmits<{
     (event: 'suggestion', payload: { suggestedPrompt?: string | null; analysis?: string | null }): void;
     (event: 'select-conversation', conversationId: number): void;
     (event: 'new-conversation'): void;
-    (event: 'conversation-created', conversation: { id: number; type: 'idea' | 'run_feedback'; status: string; created_at: string; updated_at: string }): void;
+    (event: 'conversation-created', conversation: { id: number; type: 'idea' | 'run_feedback' | 'agent_chat'; status: string; created_at: string; updated_at: string }): void;
+    (event: 'conversation-deleted', conversationId: number): void;
+    (event: 'message-sent', messages: ChatMessage[]): void;
 }>();
 
 const conversationId = ref<number | null>(null);
@@ -113,7 +142,26 @@ const ensureConversation = async (forceNew = false) => {
             ?.getAttribute('content') ||
         decodeURIComponent(getCookie('XSRF-TOKEN'));
 
-    const response = await fetch(`/projects/${props.projectUuid}/prompt-conversations`, {
+    let url: string;
+    let body: Record<string, unknown>;
+
+    if (props.type === 'agent_chat' && props.agentId) {
+        url = `/projects/${props.projectUuid}/agents/${props.agentId}/conversations`;
+        body = {
+            force_new: forceNew,
+        };
+    } else {
+        url = `/projects/${props.projectUuid}/prompt-conversations`;
+        body = {
+            type: props.type,
+            run_id: props.runId ?? null,
+            run_step_id: props.runStepId ?? null,
+            target_prompt_version_id: props.targetPromptVersionId ?? null,
+            force_new: forceNew,
+        };
+    }
+
+    const response = await fetch(url, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -121,13 +169,7 @@ const ensureConversation = async (forceNew = false) => {
             ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
         },
         credentials: 'same-origin',
-        body: JSON.stringify({
-            type: props.type,
-            run_id: props.runId ?? null,
-            run_step_id: props.runStepId ?? null,
-            target_prompt_version_id: props.targetPromptVersionId ?? null,
-            force_new: forceNew,
-        }),
+        body: JSON.stringify(body),
     });
 
     const payload = await response.json().catch(() => null);
@@ -152,7 +194,14 @@ const loadConversation = async (id: number) => {
             ?.getAttribute('content') ||
         decodeURIComponent(getCookie('XSRF-TOKEN'));
 
-    const response = await fetch(`/projects/${props.projectUuid}/prompt-conversations/${id}`, {
+    let url: string;
+    if (props.type === 'agent_chat' && props.agentId) {
+        url = `/projects/${props.projectUuid}/agents/${props.agentId}/conversations/${id}`;
+    } else {
+        url = `/projects/${props.projectUuid}/prompt-conversations/${id}`;
+    }
+
+    const response = await fetch(url, {
         method: 'GET',
         headers: {
             Accept: 'application/json',
@@ -165,21 +214,23 @@ const loadConversation = async (id: number) => {
     conversationId.value = payload?.conversation?.id ?? null;
     messages.value = Array.isArray(payload?.messages) ? payload.messages : [];
     
-    // Reset diff state when loading a conversation
-    suggestedPromptContent.value = '';
-    originalContentForDiff.value = '';
-    
-    // Find all assistant messages with suggestions
-    const assistantMessages = messages.value.filter(m => m.role === 'assistant' && m.meta?.suggested_prompt);
-    
-    if (assistantMessages.length > 0) {
-        // Last suggestion is the current one
-        const lastAssistantMessage = assistantMessages[assistantMessages.length - 1];
-        suggestedPromptContent.value = lastAssistantMessage.meta?.suggested_prompt as string;
+    // Reset diff state when loading a conversation (only for non-agent chats)
+    if (props.type !== 'agent_chat') {
+        suggestedPromptContent.value = '';
+        originalContentForDiff.value = '';
         
-        // First suggestion is the baseline for comparison
-        const firstAssistantMessage = assistantMessages[0];
-        originalContentForDiff.value = firstAssistantMessage.meta?.suggested_prompt as string;
+        // Find all assistant messages with suggestions
+        const assistantMessages = messages.value.filter(m => m.role === 'assistant' && m.meta?.suggested_prompt);
+        
+        if (assistantMessages.length > 0) {
+            // Last suggestion is the current one
+            const lastAssistantMessage = assistantMessages[assistantMessages.length - 1];
+            suggestedPromptContent.value = lastAssistantMessage.meta?.suggested_prompt as string;
+            
+            // First suggestion is the baseline for comparison
+            const firstAssistantMessage = assistantMessages[0];
+            originalContentForDiff.value = firstAssistantMessage.meta?.suggested_prompt as string;
+        }
     }
     
     isBootstrapping.value = false;
@@ -192,6 +243,40 @@ const createNewConversation = () => {
     isCreatingNewConversation.value = true;
     resetConversation();
     emit('new-conversation');
+    if (props.type === 'agent_chat') {
+        isCreatingNewConversation.value = false;
+    }
+};
+
+const deleteConversation = async (id: number) => {
+    if (props.type !== 'agent_chat' || !props.agentId) return;
+    if (!confirm('Are you sure you want to delete this conversation?')) return;
+
+    const csrfToken =
+        document
+            .querySelector('meta[name="csrf-token"]')
+            ?.getAttribute('content') ||
+        decodeURIComponent(getCookie('XSRF-TOKEN'));
+
+    const response = await fetch(
+        `/projects/${props.projectUuid}/agents/${props.agentId}/conversations/${id}`,
+        {
+            method: 'DELETE',
+            headers: {
+                Accept: 'application/json',
+                ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
+            },
+            credentials: 'same-origin',
+        },
+    );
+
+    if (!response.ok) return;
+
+    if (conversationId.value === id) {
+        resetConversation();
+    }
+
+    emit('conversation-deleted', id);
 };
 
 const sendMessage = async () => {
@@ -218,21 +303,25 @@ const sendMessage = async () => {
         decodeURIComponent(getCookie('XSRF-TOKEN'));
 
     try {
-        const response = await fetch(
-            `/projects/${props.projectUuid}/prompt-conversations/${conversationId.value}/messages`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Accept: 'application/json',
-                    ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
-                },
-                credentials: 'same-origin',
-                body: JSON.stringify({
-                    content,
-                }),
+        let url: string;
+        if (props.type === 'agent_chat' && props.agentId) {
+            url = `/projects/${props.projectUuid}/agents/${props.agentId}/conversations/${conversationId.value}/messages`;
+        } else {
+            url = `/projects/${props.projectUuid}/prompt-conversations/${conversationId.value}/messages`;
+        }
+
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json',
+                ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
             },
-        );
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                content,
+            }),
+        });
 
         const payload = await response.json().catch(() => null);
         const userMessage = payload?.user_message;
@@ -246,25 +335,38 @@ const sendMessage = async () => {
             messages.value = [...messages.value, assistantMessage];
         }
 
-        const suggestedPrompt = assistantMessage?.meta?.suggested_prompt;
-        const analysis = assistantMessage?.meta?.analysis;
-        
-        if (suggestedPrompt) {
-            // If this is the first suggestion, set it as the original for future diffs
-            if (!originalContentForDiff.value) {
-                originalContentForDiff.value = suggestedPrompt as string;
-            } else {
-                // For subsequent suggestions, the previous suggestion becomes the "original"
-                originalContentForDiff.value = suggestedPromptContent.value || suggestedPrompt as string;
+        // Emit new messages for agent chat
+        if (props.type === 'agent_chat') {
+            const newMessages: ChatMessage[] = [];
+            if (userMessage) newMessages.push(userMessage);
+            if (assistantMessage) newMessages.push(assistantMessage);
+            if (newMessages.length > 0) {
+                emit('message-sent', newMessages);
             }
-            suggestedPromptContent.value = suggestedPrompt as string;
         }
-        
-        if (suggestedPrompt || analysis) {
-            emit('suggestion', {
-                suggestedPrompt: suggestedPrompt ?? null,
-                analysis: analysis ?? null,
-            });
+
+        // Handle suggestions for non-agent chat types
+        if (props.type !== 'agent_chat') {
+            const suggestedPrompt = assistantMessage?.meta?.suggested_prompt;
+            const analysis = assistantMessage?.meta?.analysis;
+            
+            if (suggestedPrompt) {
+                // If this is the first suggestion, set it as the original for future diffs
+                if (!originalContentForDiff.value) {
+                    originalContentForDiff.value = suggestedPrompt as string;
+                } else {
+                    // For subsequent suggestions, the previous suggestion becomes the "original"
+                    originalContentForDiff.value = suggestedPromptContent.value || suggestedPrompt as string;
+                }
+                suggestedPromptContent.value = suggestedPrompt as string;
+            }
+            
+            if (suggestedPrompt || analysis) {
+                emit('suggestion', {
+                    suggestedPrompt: suggestedPrompt ?? null,
+                    analysis: analysis ?? null,
+                });
+            }
         }
     } finally {
         isSending.value = false;
@@ -298,7 +400,9 @@ watch(
     () => props.active,
     (active) => {
         if (active) {
-            ensureConversation();
+            if (props.type !== 'agent_chat') {
+                ensureConversation();
+            }
         }
     },
     { immediate: true },
@@ -311,10 +415,12 @@ watch(
         lastContextKey.value = nextKey ?? null;
         resetConversation();
         if (props.active) {
-            // If we're creating a new conversation, force create it
-            ensureConversation(isCreatingNewConversation.value);
-            // Reset the flag after creating
-            isCreatingNewConversation.value = false;
+            if (props.type !== 'agent_chat') {
+                // If we're creating a new conversation, force create it
+                ensureConversation(isCreatingNewConversation.value);
+                // Reset the flag after creating
+                isCreatingNewConversation.value = false;
+            }
         }
     },
 );
@@ -331,7 +437,7 @@ watch(
     <div class="flex h-full">
         <!-- History Sidebar -->
         <div
-            v-if="showHistory && props.type === 'idea'"
+            v-if="showHistory && (props.type === 'idea' || props.type === 'agent_chat')"
             class="flex flex-col border-r bg-gray-50 transition-all duration-300"
             :class="isHistoryCollapsed ? 'w-12' : 'w-64'"
         >
@@ -366,15 +472,36 @@ watch(
                     <div
                         v-for="conversation in props.conversations"
                         :key="conversation.id"
-                        class="cursor-pointer rounded-lg px-3 py-2 text-sm transition"
+                        class="group flex items-start justify-between gap-2 rounded-lg px-3 py-2 text-sm transition"
                         :class="isActiveConversation(conversation.id) 
                             ? 'bg-primary/10 text-primary font-medium' 
                             : 'hover:bg-gray-100 text-muted-foreground'"
-                        @click="loadConversation(conversation.id)"
                     >
-                        <div class="truncate">
-                            {{ formatDate(conversation.updated_at) }}
-                        </div>
+                        <button
+                            type="button"
+                            class="flex-1 text-left"
+                            @click="loadConversation(conversation.id)"
+                        >
+                            <div class="truncate">
+                                <template v-if="props.type === 'agent_chat' && conversation.title">
+                                    {{ conversation.title }}
+                                </template>
+                                <template v-else>
+                                    {{ formatDate(conversation.updated_at) }}
+                                </template>
+                            </div>
+                            <div v-if="props.type === 'agent_chat' && conversation.message_count !== undefined" class="text-xs text-muted-foreground mt-1">
+                                {{ conversation.message_count }} messages
+                            </div>
+                        </button>
+                        <button
+                            v-if="props.type === 'agent_chat'"
+                            type="button"
+                            class="text-xs text-muted-foreground opacity-0 transition group-hover:opacity-100 hover:text-destructive"
+                            @click.stop="deleteConversation(conversation.id)"
+                        >
+                            Delete
+                        </button>
                     </div>
                     <div v-if="props.conversations.length === 0" class="px-3 py-4 text-xs text-muted-foreground text-center">
                         No previous conversations
@@ -389,7 +516,7 @@ watch(
                 <!-- Chat Section -->
                 <div 
                     class="flex flex-col gap-6 transition-all duration-300"
-                    :class="hasSuggestion ? 'w-[60%]' : 'w-full'"
+                    :class="(hasSuggestion && props.type !== 'agent_chat') ? 'w-[60%]' : 'w-full'"
                 >
                     <div
                         v-if="showHeader"
@@ -416,18 +543,18 @@ watch(
 
                     <div class="flex-1 overflow-y-auto pr-1 px-6">
                         <div class="mx-auto flex w-full flex-col gap-4" :class="maxWidthClass">
-                            <div v-for="message in messages" :key="message.id" class="flex items-start gap-3">
+                            <div v-for="message in messages" :key="message.id" class="flex items-start gap-3" :class="message.role === 'user' ? 'flex-row-reverse' : 'flex-row'">
                                 <div
                                     v-if="message.role !== 'user'"
-                                    class="mt-1 flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary"
+                                    class="mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
                                 >
                                     <Icon name="sparkles" class="h-4 w-4" />
                                 </div>
                                 <div
-                                    class="rounded-2xl px-4 py-2 text-sm text-foreground"
+                                    class="rounded-2xl px-4 py-2 text-sm text-foreground max-w-[80%]"
                                     :class="
                                         message.role === 'user'
-                                            ? 'ml-auto rounded-tr-sm bg-primary/10'
+                                            ? 'rounded-tr-sm bg-primary/10 text-primary-foreground'
                                             : 'rounded-tl-sm bg-slate-50'
                                     "
                                 >
@@ -435,18 +562,18 @@ watch(
                                 </div>
                                 <div
                                     v-if="message.role === 'user'"
-                                    class="mt-1 flex h-8 w-8 items-center justify-center rounded-full bg-muted text-muted-foreground"
+                                    class="mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground"
                                 >
                                     <Icon name="user" class="h-4 w-4" />
                                 </div>
                             </div>
 
-                            <div v-if="isSending" class="flex items-start gap-3">
-                                <div class="mt-1 flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-primary">
+                            <div v-if="isSending" class="flex items-start gap-3 flex-row">
+                                <div class="mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
                                     <Icon name="sparkles" class="h-4 w-4" />
                                 </div>
-                                <div class="rounded-2xl rounded-tl-sm bg-slate-50 px-4 py-2 text-sm text-muted-foreground">
-                                    Analyzing your idea...
+                                <div class="rounded-2xl rounded-tl-sm bg-slate-50 px-4 py-2 text-sm text-muted-foreground max-w-[80%]">
+                                    {{ props.type === 'agent_chat' ? 'Thinking...' : 'Analyzing your idea...' }}
                                 </div>
                             </div>
                         </div>
@@ -493,9 +620,9 @@ watch(
                     </div>
                 </div>
 
-                <!-- Diff Panel (Right Side) -->
+                <!-- Diff Panel (Right Side) - Hidden for agent_chat -->
                 <div
-                    v-if="hasSuggestion"
+                    v-if="hasSuggestion && props.type !== 'agent_chat'"
                     class="flex w-[40%] flex-col border-l bg-white"
                 >
                     <div class="flex flex-none items-center justify-between border-b px-4 py-3">

@@ -60,4 +60,9 @@ class Project extends Model
     {
         return $this->hasMany(PromptConversation::class);
     }
+
+    public function agents(): HasMany
+    {
+        return $this->hasMany(Agent::class);
+    }
 }

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import Icon from '@/components/Icon.vue';
 import Chart from 'primevue/chart';
-import PromptChat from '@/components/prompts/PromptChat.vue';
+import ChatUI from '@/components/chat/ChatUI.vue';
 import { computed, onMounted, ref, watch } from 'vue';
 
 interface ProjectPayload {
@@ -217,7 +217,7 @@ const fetchConversations = async () => {
     }
 };
 
-const handlePromptChatSuggestion = (payload: { suggestedPrompt?: string | null; analysis?: string | null }) => {
+const handleChatSuggestion = (payload: { suggestedPrompt?: string | null; analysis?: string | null }) => {
     promptIdeaSuggestion.value = {
         suggestion: payload.suggestedPrompt ?? null,
         analysis: payload.analysis ?? null,
@@ -232,7 +232,7 @@ const handleNewConversation = () => {
 };
 
 const handleSelectConversation = () => {
-    // Conversation loaded in PromptChat component
+    // Conversation loaded in ChatUI component
     // Reset the suggestion state since we're loading an existing conversation
     promptIdeaSuggestion.value = null;
 };
@@ -396,7 +396,7 @@ onMounted(() => {
             </div>
 
             <div class="flex flex-1 flex-col gap-8 min-h-[600px]">
-                <PromptChat
+                <ChatUI
                     class="flex-1 rounded-2xl border border-border/60 bg-white shadow-sm overflow-hidden"
                     :project-uuid="project.uuid"
                     type="idea"
@@ -407,7 +407,7 @@ onMounted(() => {
                     :show-history="true"
                     :conversations="conversations"
                     :context-key="chatContextKey"
-                    @suggestion="handlePromptChatSuggestion"
+                    @suggestion="handleChatSuggestion"
                     @new-conversation="handleNewConversation"
                     @select-conversation="handleSelectConversation"
                     @conversation-created="handleConversationCreated"
@@ -437,7 +437,7 @@ onMounted(() => {
                             </div>
                         </div>
                     </template>
-                </PromptChat>
+                </ChatUI>
             </div>
 
         </div>

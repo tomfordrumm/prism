@@ -16,6 +16,7 @@ return new class extends Migration
             $table->foreignId('run_id')->nullable()->constrained('runs')->nullOnDelete();
             $table->foreignId('run_step_id')->nullable()->constrained('run_steps')->nullOnDelete();
             $table->foreignId('target_prompt_version_id')->nullable()->constrained('prompt_versions')->nullOnDelete();
+            $table->foreignId('agent_id')->nullable()->constrained('agents')->nullOnDelete();
             $table->string('status')->default('active');
             $table->timestamps();
 
