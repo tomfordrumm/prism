@@ -200,6 +200,9 @@ const activeFeedbackTarget = computed(() => {
             :project-uuid="project.uuid"
             :step="activeFeedbackStep"
             :target-prompt="activeFeedbackTarget"
+            :run-input="run.input"
+            :run-dataset="run.dataset"
+            :run-test-case="run.test_case"
         />
         <RunHistoryDrawer
             v-model:open="historyOpen"

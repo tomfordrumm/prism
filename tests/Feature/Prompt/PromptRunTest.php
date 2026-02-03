@@ -8,6 +8,7 @@ use App\Models\ProviderCredential;
 use App\Models\Run;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Bus;
 use Tests\TestCase;
 
 class PromptRunTest extends TestCase
@@ -18,6 +19,7 @@ class PromptRunTest extends TestCase
     {
         $user = User::factory()->create();
         $this->actingAs($user);
+        Bus::fake();
 
         $project = Project::create([
             'tenant_id' => currentTenantId(),
@@ -50,7 +52,7 @@ class PromptRunTest extends TestCase
             'encrypted_api_key' => 'secret',
         ]);
 
-        $response = $this->post("/projects/{$project->id}/prompts/{$template->id}/run", [
+        $response = $this->post(route('projects.prompts.run', [$project, $template]), [
             'provider_credential_id' => $credential->id,
             'model_name' => 'claude-test',
             'variables' => json_encode(['name' => 'Ada']),
@@ -60,11 +62,12 @@ class PromptRunTest extends TestCase
         $this->assertNotNull($run);
 
         $response->assertRedirect(route('projects.runs.show', [$project, $run]));
-        $this->assertNotSame('failed', $run->status);
-        $this->assertTrue($run->chain->is_quick_prompt);
+        $this->assertSame('pending', $run->status);
+        $this->assertNull($run->chain_id);
         $this->assertSame($project->id, $run->project_id);
         $this->assertSame($credential->id, $run->chain_snapshot[0]['provider_credential_id']);
         $this->assertSame($latest->id, $run->chain_snapshot[0]['messages_config'][0]['prompt_version_id']);
         $this->assertSame(['name' => 'Ada'], $run->input);
+        Bus::assertDispatched(\App\Jobs\ExecuteRunJob::class);
     }
 }

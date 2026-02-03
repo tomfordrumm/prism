@@ -43,6 +43,7 @@ interface Props {
     showHistory?: boolean;
     conversations?: ConversationListItem[];
     originalPromptContent?: string;
+    showDiffPanel?: boolean;
     // Agent-specific props
     agentName?: string;
     agentModel?: string;
@@ -71,6 +72,7 @@ const props = withDefaults(defineProps<Props>(), {
     showHistory: false,
     conversations: () => [],
     originalPromptContent: '',
+    showDiffPanel: true,
     agentId: null,
     agentName: '',
     agentModel: '',
@@ -622,7 +624,7 @@ watch(
 
                 <!-- Diff Panel (Right Side) - Hidden for agent_chat -->
                 <div
-                    v-if="hasSuggestion && props.type !== 'agent_chat'"
+                    v-if="hasSuggestion && props.type !== 'agent_chat' && props.showDiffPanel"
                     class="flex w-[40%] flex-col border-l bg-white"
                 >
                     <div class="flex flex-none items-center justify-between border-b px-4 py-3">

@@ -78,7 +78,7 @@ class RunStreamTest extends TestCase
             'status' => 'success',
         ]);
 
-        $response = $this->get("/projects/{$project->id}/runs/{$run->id}/stream");
+        $response = $this->get(route('projects.runs.stream', [$project, $run]));
 
         $response->assertOk();
         $this->assertStringContainsString('text/event-stream', $response->headers->get('Content-Type'));
