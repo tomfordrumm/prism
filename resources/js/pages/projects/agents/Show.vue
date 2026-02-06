@@ -5,13 +5,13 @@ import { Link } from '@inertiajs/vue3';
 import { reactive, ref, watch } from 'vue';
 
 import { Button } from '@/components/ui/button';
-import {
-    Collapsible,
-    CollapsibleContent,
-    CollapsibleTrigger,
-} from '@/components/ui/collapsible';
 import ChatUI from '@/components/chat/ChatUI.vue';
-import { Bot, Settings, ChevronDown, ChevronRight, Edit3 } from 'lucide-vue-next';
+import {
+    Bot,
+    Settings,
+    ChevronRight,
+    Edit3,
+} from 'lucide-vue-next';
 
 interface ProjectPayload {
     id: number;
@@ -50,7 +50,7 @@ interface Props {
 }
 
 const props = defineProps<Props>();
-const isInfoPanelOpen = ref(true);
+const isInfoPanelVisible = ref(true);
 const agentStats = reactive({
     total_messages: props.agent.total_messages,
 });
@@ -126,19 +126,31 @@ const handleConversationDeleted = (conversationId: number) => {
                     />
                 </div>
 
-                <Collapsible v-model:open="isInfoPanelOpen" class="w-72 border-l border-border bg-muted/20">
-                    <CollapsibleTrigger as-child>
-                        <button class="w-full p-3 border-b border-border flex items-center justify-between hover:bg-muted/50 transition-colors">
-                            <div class="flex items-center gap-2">
+                <div
+                    class="border-l border-border bg-muted/20 transition-all duration-300"
+                    :class="isInfoPanelVisible ? 'w-72' : 'w-14'"
+                >
+                    <button
+                        type="button"
+                        class="w-full border-b border-border p-3 transition-colors hover:bg-muted/50"
+                        @click="isInfoPanelVisible = !isInfoPanelVisible"
+                    >
+                        <div
+                            class="flex items-center justify-between"
+                            :class="isInfoPanelVisible ? '' : 'justify-center'"
+                        >
+                            <div v-if="isInfoPanelVisible" class="flex items-center gap-2">
                                 <Settings class="h-4 w-4 text-muted-foreground" />
                                 <span class="text-sm font-medium">Agent Info</span>
                             </div>
-                            <ChevronDown v-if="isInfoPanelOpen" class="h-4 w-4 text-muted-foreground" />
-                            <ChevronRight v-else class="h-4 w-4 text-muted-foreground" />
-                        </button>
-                    </CollapsibleTrigger>
-                    
-                    <CollapsibleContent>
+                            <ChevronRight
+                                class="h-4 w-4 text-muted-foreground transition-transform duration-300"
+                                :class="isInfoPanelVisible ? 'rotate-180' : ''"
+                            />
+                        </div>
+                    </button>
+
+                    <div v-if="isInfoPanelVisible">
                         <div class="p-4 space-y-4">
                             <div class="flex items-center gap-3">
                                 <div class="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
@@ -194,8 +206,8 @@ const handleConversationDeleted = (conversationId: number) => {
                                 </Link>
                             </Button>
                         </div>
-                    </CollapsibleContent>
-                </Collapsible>
+                    </div>
+                </div>
             </div>
         </div>
     </ProjectLayout>

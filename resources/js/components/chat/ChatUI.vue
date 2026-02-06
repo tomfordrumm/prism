@@ -545,7 +545,12 @@ watch(
 
                     <div class="flex-1 overflow-y-auto pr-1 px-6">
                         <div class="mx-auto flex w-full flex-col gap-4" :class="maxWidthClass">
-                            <div v-for="message in messages" :key="message.id" class="flex items-start gap-3" :class="message.role === 'user' ? 'flex-row-reverse' : 'flex-row'">
+                            <div
+                                v-for="message in messages"
+                                :key="message.id"
+                                class="flex items-start gap-3"
+                                :class="message.role === 'user' ? 'justify-end' : 'flex-row'"
+                            >
                                 <div
                                     v-if="message.role !== 'user'"
                                     class="mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
@@ -556,7 +561,7 @@ watch(
                                     class="rounded-2xl px-4 py-2 text-sm text-foreground max-w-[80%]"
                                     :class="
                                         message.role === 'user'
-                                            ? 'rounded-tr-sm bg-primary/10 text-primary-foreground'
+                                            ? 'rounded-tr-sm bg-slate-200 text-slate-900 dark:bg-slate-700 dark:text-slate-100'
                                             : 'rounded-tl-sm bg-slate-50'
                                     "
                                 >
