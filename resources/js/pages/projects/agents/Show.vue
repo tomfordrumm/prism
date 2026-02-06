@@ -133,6 +133,9 @@ const handleConversationDeleted = (conversationId: number) => {
                     <button
                         type="button"
                         class="w-full border-b border-border p-3 transition-colors hover:bg-muted/50"
+                        :aria-expanded="isInfoPanelVisible"
+                        aria-controls="agent-info-panel"
+                        aria-label="Toggle agent info panel"
                         @click="isInfoPanelVisible = !isInfoPanelVisible"
                     >
                         <div
@@ -150,7 +153,7 @@ const handleConversationDeleted = (conversationId: number) => {
                         </div>
                     </button>
 
-                    <div v-if="isInfoPanelVisible">
+                    <div v-if="isInfoPanelVisible" id="agent-info-panel">
                         <div class="p-4 space-y-4">
                             <div class="flex items-center gap-3">
                                 <div class="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
