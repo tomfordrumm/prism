@@ -172,7 +172,7 @@ const handleConversationDeleted = (conversationId: number) => {
                             <div class="space-y-2 text-sm">
                                 <div class="flex justify-between">
                                     <span class="text-muted-foreground">Temperature</span>
-                                    <span class="font-medium">{{ agent.temperature }}</span>
+                                    <span class="font-medium">{{ agent.temperature ?? 'Default' }}</span>
                                 </div>
                                 <div class="flex justify-between">
                                     <span class="text-muted-foreground">Max Tokens</span>
