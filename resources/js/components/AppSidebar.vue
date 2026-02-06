@@ -207,14 +207,6 @@ const handleProjectChange = (event: { value: string | null }) => {
     setProjectSelection(event.value, true);
 };
 
-const selectedProjectName = computed(() => {
-    const project = projects.value.find(
-        (p) => p.uuid === selectedProjectUuid.value,
-    );
-
-    return project?.name ?? 'Project';
-});
-
 const projectNavItems = computed(() => {
     if (!selectedProjectUuid.value) return [];
 

@@ -55,7 +55,7 @@ const submit = () => {
     if (form.metadataJson.trim().length > 0) {
         try {
             metadata = JSON.parse(form.metadataJson) as Record<string, unknown>;
-        } catch (error) {
+        } catch {
             metadataError.value = 'Metadata must be valid JSON';
 
             return;

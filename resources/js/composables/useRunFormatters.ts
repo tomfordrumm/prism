@@ -6,7 +6,7 @@ type RunHistoryItem = {
 export const jsonPretty = (value: unknown) => {
     try {
         return JSON.stringify(value, null, 2);
-    } catch (error) {
+    } catch {
         return String(value);
     }
 };

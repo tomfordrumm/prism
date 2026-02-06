@@ -134,7 +134,7 @@ const switchNewMode = (mode: InputMode) => {
         newTestCaseForm.clearErrors('inputJson');
         newInputPairs.value = pairsFromObject(parsed);
         newInputMode.value = 'builder';
-    } catch (error) {
+    } catch {
         newTestCaseForm.setError('inputJson', 'Input variables must be valid JSON');
     }
 };
@@ -157,7 +157,7 @@ const switchEditMode = (testCase: TestCasePayload, mode: InputMode) => {
         state.form.clearErrors('inputJson');
         state.pairs = pairsFromObject(parsed);
         state.mode = 'builder';
-    } catch (error) {
+    } catch {
         state.form.setError('inputJson', 'Input variables must be valid JSON');
     }
 };
@@ -228,7 +228,7 @@ const createTestCase = () => {
                     },
                 },
             );
-    } catch (error) {
+    } catch {
         newTestCaseForm.setError('inputJson', 'Input variables must be valid JSON');
     }
 };
@@ -254,7 +254,7 @@ const updateTestCase = (testCase: TestCasePayload) => {
                 }).url,
                 { preserveScroll: true },
             );
-    } catch (error) {
+    } catch {
         form.setError('inputJson', 'Input variables must be valid JSON');
     }
 };
