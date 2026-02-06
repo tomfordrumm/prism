@@ -412,7 +412,7 @@ onMounted(() => {
                     @select-conversation="handleSelectConversation"
                     @conversation-created="handleConversationCreated"
                 >
-                    <template #save-actions="{ suggestedPrompt }">
+                    <template #save-actions>
                         <div class="grid gap-3">
                             <div class="grid gap-2">
                                 <label

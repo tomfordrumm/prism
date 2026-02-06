@@ -41,7 +41,7 @@ const {
 
 const {
     selectedTemplateId,
-    selectedVersion,
+    selectedVersion: workspaceSelectedVersion,
     editorContent,
     editorMode,
     editorPreset,
@@ -56,7 +56,7 @@ const {
     versionForm,
     templateVersions,
     filteredTemplates,
-    selectedTemplate,
+    selectedTemplate: workspaceSelectedTemplate,
     isDraftSelected,
     hasChanges,
     saveLabel,
@@ -91,7 +91,7 @@ const {
             />
 
             <div class="flex h-full flex-col bg-white min-h-0">
-                <div v-if="!selectedTemplate" class="flex h-full flex-col items-center justify-center gap-3 text-center">
+                <div v-if="!workspaceSelectedTemplate" class="flex h-full flex-col items-center justify-center gap-3 text-center">
                     <p class="text-sm text-muted-foreground">No template selected.</p>
                     <Button size="sm" @click="createDraft">Create template</Button>
                 </div>
@@ -99,8 +99,8 @@ const {
                     <PromptHeader
                         :template-name="templateForm.name"
                         :template-name-editing="templateNameEditing"
-                        :selected-version="selectedVersion"
-                        :rating="selectedVersion?.rating ?? null"
+                        :selected-version="workspaceSelectedVersion"
+                        :rating="workspaceSelectedVersion?.rating ?? null"
                         :has-changes="hasChanges"
                         :is-draft-selected="isDraftSelected"
                         :save-label="saveLabel"
@@ -140,17 +140,17 @@ const {
         <PromptVersionsDialog
             :open="showVersions"
             :versions="templateVersions"
-            :selected-version-id="selectedVersion?.id ?? null"
+            :selected-version-id="workspaceSelectedVersion?.id ?? null"
             @update:open="showVersions = $event"
             @select="(version) => { loadVersion(version); showVersions = false; }"
         />
 
         <PromptRunPanel
-            v-if="selectedTemplate && !isDraftSelected"
+            v-if="workspaceSelectedTemplate && !isDraftSelected"
             v-model:open="showRunModal"
             :project-uuid="props.project.uuid"
-            :prompt-template-id="selectedTemplate.id"
-            :variables="selectedTemplate.variables ?? []"
+            :prompt-template-id="workspaceSelectedTemplate.id"
+            :variables="workspaceSelectedTemplate.variables ?? []"
             :datasets="datasets"
             :provider-credentials="providerCredentials"
             :provider-credential-models="providerCredentialModels"
@@ -158,7 +158,7 @@ const {
 
         <PromptVariablesDialog
             :open="showVariables"
-            :variables="selectedTemplate?.variables ?? []"
+            :variables="workspaceSelectedTemplate?.variables ?? []"
             @update:open="showVariables = $event"
         />
 

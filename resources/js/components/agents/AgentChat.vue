@@ -5,18 +5,14 @@
  * This file is kept for reference but should be removed in a future cleanup.
  */
 import { ref, computed, nextTick, watch } from 'vue';
-import { router } from '@inertiajs/vue3';
 
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
-import Toast from 'primevue/toast';
 import { useToast } from 'primevue/usetoast';
 import {
     Send,
     User,
     Bot,
-    AlertCircle,
     Loader2,
 } from 'lucide-vue-next';
 import agentRoutes from '@/routes/projects/agents';
@@ -69,7 +65,6 @@ const getCookie = (name: string): string | undefined => {
 const messagesContainer = ref<HTMLDivElement | null>(null);
 const messageInput = ref('');
 const isSending = ref(false);
-const streamingContent = ref('');
 
 const messages = computed(() => {
     return props.conversation.messages;

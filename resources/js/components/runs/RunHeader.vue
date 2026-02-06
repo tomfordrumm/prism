@@ -13,7 +13,7 @@ interface Props {
     isLive: boolean;
 }
 
-const props = defineProps<Props>();
+defineProps<Props>();
 
 const emit = defineEmits<{
     (event: 'open-history'): void;

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import ProjectLayout from '@/layouts/app/ProjectLayout.vue';
 import agentRoutes from '@/routes/projects/agents';
-import { computed } from 'vue';
 
 import InputError from '@/components/InputError.vue';
 import { Button } from '@/components/ui/button';

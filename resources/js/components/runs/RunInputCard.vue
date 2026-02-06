@@ -12,7 +12,7 @@ interface Props {
     testCase?: RunDatasetInfo | null;
 }
 
-const props = defineProps<Props>();
+defineProps<Props>();
 
 const { highlightJson } = useRunHighlighting();
 const copiedInput = ref(false);

@@ -25,7 +25,7 @@ export const useRunHighlighting = () => {
         try {
             jsonText = JSON.stringify(value, null, 2);
             return hljs.highlight(jsonText, { language: 'json' }).value;
-        } catch (error) {
+        } catch {
             jsonText = String(value ?? '');
         }
 
@@ -41,7 +41,7 @@ export const useRunHighlighting = () => {
         try {
             const parsed = JSON.parse(trimmed);
             return highlightJson(parsed);
-        } catch (error) {
+        } catch {
             return escapeHtml(text);
         }
     };
