@@ -6,11 +6,10 @@ use App\Services\Entitlements\Contracts\UsageCapabilityResolverInterface;
 
 final class CommunityUsageCapabilityResolver implements UsageCapabilityResolverInterface
 {
-    /**
-     * @SuppressWarnings(PHPMD.UnusedFormalParameter)
-     */
     public function forTenant(int $tenantId): UsageCapabilities
     {
+        unset($tenantId);
+
         return new UsageCapabilities([
             'run_count' => true,
             'input_tokens' => true,
