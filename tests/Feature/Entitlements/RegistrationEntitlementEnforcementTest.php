@@ -15,12 +15,13 @@ class RegistrationEntitlementEnforcementTest extends TestCase
     public function test_registration_is_blocked_when_member_invite_is_denied(): void
     {
         $this->app->bind(EntitlementServiceInterface::class, DenyInviteMemberEntitlementsFake::class);
+        $password = 'Aa1!'.fake()->unique()->bothify('######??');
 
         $response = $this->from(route('register'))->post(route('register.store'), [
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-            'password' => 'password',
-            'password_confirmation' => 'password',
+            'name' => fake()->name(),
+            'email' => fake()->unique()->safeEmail(),
+            'password' => $password,
+            'password_confirmation' => $password,
         ]);
 
         $response->assertRedirect(route('register'));

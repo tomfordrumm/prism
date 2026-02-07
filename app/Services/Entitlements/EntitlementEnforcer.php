@@ -61,6 +61,12 @@ class EntitlementEnforcer
 
     private function enforceFeature(int $tenantId, string $feature, string $message): void
     {
+        if ($tenantId <= 0) {
+            throw ValidationException::withMessages([
+                'tenant_id' => 'Invalid tenant id',
+            ]);
+        }
+
         $decision = $this->entitlements->checkFeatureAccess(
             tenantId: $tenantId,
             feature: $feature,
@@ -76,6 +82,12 @@ class EntitlementEnforcer
 
     private function enforceQuota(int $tenantId, string $quota, int $requestedUnits, string $message): void
     {
+        if ($tenantId <= 0) {
+            throw ValidationException::withMessages([
+                'tenant_id' => 'Invalid tenant id',
+            ]);
+        }
+
         $decision = $this->entitlements->checkQuota(
             tenantId: $tenantId,
             quota: $quota,
