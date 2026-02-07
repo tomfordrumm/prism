@@ -20,13 +20,13 @@ class RunChainActionUsageMeteringTest extends TestCase
 
     public function test_execute_meters_input_and_output_tokens(): void
     {
-        $tenant = Tenant::create(['name' => 'Acme']);
-        $project = Project::create([
+        $tenant = Tenant::factory()->create(['name' => 'Acme']);
+        $project = Project::factory()->create([
             'tenant_id' => $tenant->id,
             'name' => 'Demo',
         ]);
 
-        $run = Run::create([
+        $run = Run::factory()->create([
             'tenant_id' => $tenant->id,
             'project_id' => $project->id,
             'chain_id' => null,
@@ -75,6 +75,58 @@ class RunChainActionUsageMeteringTest extends TestCase
                 && $quantity === 220
                 && $context['run_id'] === $run->id;
         });
+
+        $action = new RunChainAction(
+            snapshotLoader: $snapshotLoader,
+            promptVersionResolver: $promptVersionResolver,
+            runStepRunner: $runStepRunner,
+            usageMeter: $usageMeter,
+        );
+
+        $action->execute($run);
+        $run->refresh();
+
+        $this->assertSame('success', $run->status);
+        $this->assertSame(125, $run->total_tokens_in);
+        $this->assertSame(220, $run->total_tokens_out);
+    }
+
+    public function test_execute_keeps_success_status_when_metering_throws(): void
+    {
+        $tenant = Tenant::factory()->create(['name' => 'Acme']);
+        $project = Project::factory()->create([
+            'tenant_id' => $tenant->id,
+            'name' => 'Demo',
+        ]);
+
+        $run = Run::factory()->create([
+            'tenant_id' => $tenant->id,
+            'project_id' => $project->id,
+            'chain_id' => null,
+            'input' => [],
+            'chain_snapshot' => [],
+            'status' => 'pending',
+            'started_at' => now(),
+        ]);
+
+        $snapshotLoader = Mockery::mock(ChainSnapshotLoader::class);
+        $snapshotLoader->shouldReceive('load')->once()->with($run)->andReturn(collect());
+
+        $promptVersionResolver = Mockery::mock(PromptVersionResolver::class);
+        $promptVersionResolver->shouldReceive('loadForNodes')->once()->andReturn([
+            'by_id' => collect(),
+            'by_template' => collect(),
+        ]);
+
+        $runStepRunner = Mockery::mock(RunStepRunner::class);
+        $runStepRunner->shouldReceive('runSteps')->once()->andReturn([
+            'total_tokens_in' => 125,
+            'total_tokens_out' => 220,
+            'failed' => false,
+        ]);
+
+        $usageMeter = Mockery::mock(UsageMeterInterface::class);
+        $usageMeter->shouldReceive('meter')->twice()->andThrow(new \RuntimeException('meter failed'));
 
         $action = new RunChainAction(
             snapshotLoader: $snapshotLoader,

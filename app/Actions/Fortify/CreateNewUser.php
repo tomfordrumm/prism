@@ -53,16 +53,18 @@ class CreateNewUser implements CreatesNewUsers
 
             $this->entitlementEnforcer->ensureCanInviteMember($tenant->id);
             $user->tenants()->attach($tenant->id, ['role' => 'owner']);
-            $this->usageMeter->meter(
-                tenantId: $tenant->id,
-                meter: 'active_members',
-                quantity: 1,
-                context: [
-                    'user_id' => $user->id,
-                    'actor_user_id' => $user->id,
-                    'source' => 'registration',
-                ],
-            );
+            DB::afterCommit(function () use ($tenant, $user): void {
+                $this->usageMeter->meter(
+                    tenantId: $tenant->id,
+                    meter: 'active_members',
+                    quantity: 1,
+                    context: [
+                        'user_id' => $user->id,
+                        'actor_user_id' => $user->id,
+                        'source' => 'registration',
+                    ],
+                );
+            });
 
             $this->entitlementEnforcer->ensureCanCreateProject($tenant->id);
             Project::create([

@@ -14,7 +14,7 @@ class EventUsageMeter implements UsageMeterInterface
 
     public function meter(int $tenantId, string $meter, int $quantity, array $context = []): void
     {
-        if ($tenantId <= 0 || $quantity === 0) {
+        if ($tenantId <= 0 || $quantity <= 0) {
             return;
         }
 

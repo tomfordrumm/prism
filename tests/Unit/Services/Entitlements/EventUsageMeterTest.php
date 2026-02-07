@@ -81,6 +81,7 @@ class EventUsageMeterTest extends TestCase
 
         $meter->meter(tenantId: 0, meter: 'run_count', quantity: 1);
         $meter->meter(tenantId: 10, meter: 'run_count', quantity: 0);
+        $meter->meter(tenantId: 10, meter: 'run_count', quantity: -5);
 
         Event::assertNotDispatched(UsageMetered::class);
     }

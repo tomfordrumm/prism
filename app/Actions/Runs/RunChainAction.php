@@ -73,8 +73,8 @@ class RunChainAction
         ];
 
         if ($totalTokensIn > 0) {
-            $this->usageMeter->meter(
-                tenantId: $run->tenant_id,
+            $this->safeMeter(
+                run: $run,
                 meter: 'input_tokens',
                 quantity: $totalTokensIn,
                 context: $context,
@@ -82,12 +82,32 @@ class RunChainAction
         }
 
         if ($totalTokensOut > 0) {
-            $this->usageMeter->meter(
-                tenantId: $run->tenant_id,
+            $this->safeMeter(
+                run: $run,
                 meter: 'output_tokens',
                 quantity: $totalTokensOut,
                 context: $context,
             );
+        }
+    }
+
+    private function safeMeter(Run $run, string $meter, int $quantity, array $context): void
+    {
+        try {
+            $this->usageMeter->meter(
+                tenantId: $run->tenant_id,
+                meter: $meter,
+                quantity: $quantity,
+                context: $context,
+            );
+        } catch (\Throwable $e) {
+            Log::error('RunChainAction: usage metering failed', [
+                'run_id' => $run->id,
+                'tenant_id' => $run->tenant_id,
+                'meter' => $meter,
+                'quantity' => $quantity,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 }
