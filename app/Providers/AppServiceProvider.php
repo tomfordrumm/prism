@@ -2,10 +2,14 @@
 
 namespace App\Providers;
 
+use App\Models\Run;
+use App\Observers\RunObserver;
 use App\Services\Entitlements\CommunityEntitlementService;
 use App\Services\Entitlements\CommunityUsageCapabilityResolver;
 use App\Services\Entitlements\Contracts\EntitlementServiceInterface;
 use App\Services\Entitlements\Contracts\UsageCapabilityResolverInterface;
+use App\Services\Entitlements\Contracts\UsageMeterInterface;
+use App\Services\Entitlements\EventUsageMeter;
 use App\Support\TenantManager;
 use Illuminate\Support\ServiceProvider;
 
@@ -19,13 +23,17 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(TenantManager::class);
         $this->app->singletonIf(EntitlementServiceInterface::class, CommunityEntitlementService::class);
         $this->app->singletonIf(UsageCapabilityResolverInterface::class, CommunityUsageCapabilityResolver::class);
+        $this->app->singletonIf(UsageMeterInterface::class, EventUsageMeter::class);
         $this->registerHelpers();
     }
 
     /**
      * Bootstrap any application services.
      */
-    public function boot(): void {}
+    public function boot(): void
+    {
+        Run::observe(RunObserver::class);
+    }
 
     private function registerHelpers(): void
     {
