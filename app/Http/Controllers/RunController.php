@@ -4,11 +4,11 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\Runs\RunChainRequest;
 use App\Jobs\ExecuteRunJob;
-use App\Models\Dataset;
 use App\Models\Chain;
+use App\Models\Dataset;
 use App\Models\Project;
 use App\Models\Run;
-use App\Models\TestCase;
+use App\Services\Entitlements\EntitlementEnforcer;
 use App\Services\Runs\ChainSnapshotLoader;
 use App\Services\Runs\RunViewService;
 use Illuminate\Http\RedirectResponse;
@@ -18,9 +18,9 @@ use Inertia\Response;
 class RunController extends Controller
 {
     public function __construct(
-        private RunViewService $runViewService
-    ) {
-    }
+        private RunViewService $runViewService,
+        private EntitlementEnforcer $entitlementEnforcer
+    ) {}
 
     public function index(Project $project): Response
     {
@@ -81,6 +81,7 @@ class RunController extends Controller
         ChainSnapshotLoader $snapshotLoader
     ): RedirectResponse {
         $this->assertChainProject($chain, $project);
+        $this->entitlementEnforcer->ensureCanRunChain((int) currentTenantId());
 
         $input = $request->input('input');
         $inputData = $input ? json_decode($input, true) : [];
@@ -121,6 +122,10 @@ class RunController extends Controller
             ->firstOrFail();
 
         $dataset->load('testCases');
+        $this->entitlementEnforcer->ensureCanRunChain(
+            tenantId: (int) currentTenantId(),
+            requestedRuns: $dataset->testCases->count(),
+        );
 
         $chain->load(['nodes' => fn ($query) => $query->orderBy('order_index')]);
         $snapshot = $snapshotLoader->createSnapshot($chain);
@@ -165,5 +170,4 @@ class RunController extends Controller
             abort(404);
         }
     }
-
 }
