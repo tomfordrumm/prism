@@ -2,6 +2,10 @@
 
 namespace App\Providers;
 
+use App\Services\Entitlements\CommunityEntitlementService;
+use App\Services\Entitlements\CommunityUsageCapabilityResolver;
+use App\Services\Entitlements\Contracts\EntitlementServiceInterface;
+use App\Services\Entitlements\Contracts\UsageCapabilityResolverInterface;
 use App\Support\TenantManager;
 use Illuminate\Support\ServiceProvider;
 
@@ -13,15 +17,15 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(TenantManager::class);
+        $this->app->singletonIf(EntitlementServiceInterface::class, CommunityEntitlementService::class);
+        $this->app->singletonIf(UsageCapabilityResolverInterface::class, CommunityUsageCapabilityResolver::class);
         $this->registerHelpers();
     }
 
     /**
      * Bootstrap any application services.
      */
-    public function boot(): void
-    {
-    }
+    public function boot(): void {}
 
     private function registerHelpers(): void
     {
