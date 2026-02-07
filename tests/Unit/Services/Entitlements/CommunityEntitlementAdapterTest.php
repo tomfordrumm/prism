@@ -43,6 +43,22 @@ class CommunityEntitlementAdapterTest extends TestCase
         $this->assertNull($quotaDecision->used);
     }
 
+    public function test_community_adapter_denies_invalid_requested_units(): void
+    {
+        $adapter = $this->app->make(EntitlementServiceInterface::class);
+
+        $quotaDecision = $adapter->checkQuota(
+            tenantId: 42,
+            quota: 'run_count',
+            requestedUnits: 0,
+        );
+
+        $this->assertFalse($quotaDecision->allowed);
+        $this->assertSame('invalid_requested_units', $quotaDecision->reason);
+        $this->assertSame(0, $quotaDecision->limit);
+        $this->assertSame(0, $quotaDecision->used);
+    }
+
     public function test_community_usage_capabilities_are_explicit_and_stable(): void
     {
         $resolver = $this->app->make(UsageCapabilityResolverInterface::class);
