@@ -11,15 +11,16 @@ use App\Models\PromptTemplate;
 use App\Models\ProviderCredential;
 use App\Models\Run;
 use App\Models\TestCase;
+use App\Services\Entitlements\EntitlementEnforcer;
 use App\Services\Runs\ChainSnapshotLoader;
 
 class RerunRunAction
 {
     public function __construct(
         private RunPromptTemplateAction $promptRunner,
-        private ChainSnapshotLoader $snapshotLoader
-    ) {
-    }
+        private ChainSnapshotLoader $snapshotLoader,
+        private EntitlementEnforcer $entitlementEnforcer
+    ) {}
 
     /**
      * @return array{type: 'single'|'dataset', run: ?Run}
@@ -52,6 +53,10 @@ class RerunRunAction
                 ->findOrFail($run->dataset_id);
 
             $dataset->load('testCases');
+            $this->entitlementEnforcer->ensureCanRunChain(
+                tenantId: (int) currentTenantId(),
+                requestedRuns: $dataset->testCases->count(),
+            );
 
             foreach ($dataset->testCases as $testCase) {
                 /** @var TestCase $testCase */
@@ -72,6 +77,8 @@ class RerunRunAction
 
             return ['type' => 'dataset', 'run' => null];
         }
+
+        $this->entitlementEnforcer->ensureCanRunChain((int) currentTenantId());
 
         $newRun = Run::create([
             'tenant_id' => currentTenantId(),
@@ -122,6 +129,10 @@ class RerunRunAction
                 ->findOrFail($run->dataset_id);
 
             $dataset->load('testCases');
+            $this->entitlementEnforcer->ensureCanRunChain(
+                tenantId: (int) currentTenantId(),
+                requestedRuns: $dataset->testCases->count(),
+            );
 
             foreach ($dataset->testCases as $testCase) {
                 /** @var TestCase $testCase */
@@ -144,6 +155,7 @@ class RerunRunAction
         }
 
         $variables = $run->input ?? [];
+        $this->entitlementEnforcer->ensureCanRunChain((int) currentTenantId());
 
         $newRun = $this->promptRunner->run(
             $project,

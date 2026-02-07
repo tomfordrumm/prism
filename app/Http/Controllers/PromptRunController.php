@@ -3,18 +3,23 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Prompts\RunPromptTemplateAction;
-use App\Http\Requests\PromptTemplates\RunPromptTemplateRequest;
 use App\Http\Requests\PromptTemplates\RunPromptTemplateDatasetRequest;
+use App\Http\Requests\PromptTemplates\RunPromptTemplateRequest;
 use App\Jobs\ExecuteRunJob;
 use App\Models\Dataset;
 use App\Models\Project;
 use App\Models\PromptTemplate;
 use App\Models\ProviderCredential;
 use App\Models\TestCase;
+use App\Services\Entitlements\EntitlementEnforcer;
 use Illuminate\Http\RedirectResponse;
 
 class PromptRunController extends Controller
 {
+    public function __construct(
+        private EntitlementEnforcer $entitlementEnforcer
+    ) {}
+
     public function store(
         RunPromptTemplateRequest $request,
         Project $project,
@@ -22,6 +27,7 @@ class PromptRunController extends Controller
         RunPromptTemplateAction $action
     ): RedirectResponse {
         $this->assertTemplateProject($promptTemplate, $project);
+        $this->entitlementEnforcer->ensureCanRunChain((int) currentTenantId());
 
         $providerCredential = ProviderCredential::query()
             ->where('tenant_id', currentTenantId())
@@ -61,6 +67,10 @@ class PromptRunController extends Controller
             ->findOrFail($request->integer('dataset_id'));
 
         $dataset->load('testCases');
+        $this->entitlementEnforcer->ensureCanRunChain(
+            tenantId: (int) currentTenantId(),
+            requestedRuns: $dataset->testCases->count(),
+        );
 
         foreach ($dataset->testCases as $testCase) {
             /** @var TestCase $testCase */
