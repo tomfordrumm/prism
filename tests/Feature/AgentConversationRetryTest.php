@@ -236,28 +236,104 @@ class AgentConversationRetryTest extends TestCase
         }
     }
 
+    public function test_retry_on_non_assistant_message_returns_422(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user);
+
+        [$project, $agent, $conversation] = $this->createAgentConversation();
+
+        $message = PromptMessage::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'content' => 'User message',
+            'meta' => [
+                'status' => 'failed',
+            ],
+        ]);
+
+        $response = $this->postJson(
+            "/projects/{$project->uuid}/agents/{$agent->id}/conversations/{$conversation->id}/messages/{$message->id}/retry"
+        );
+
+        $response->assertStatus(422);
+        $response->assertJsonPath('message', 'Only assistant messages can be retried.');
+    }
+
+    public function test_retry_on_non_failed_message_returns_422(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user);
+
+        [$project, $agent, $conversation] = $this->createAgentConversation();
+
+        $message = PromptMessage::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Done',
+            'meta' => [
+                'status' => 'success',
+            ],
+        ]);
+
+        $response = $this->postJson(
+            "/projects/{$project->uuid}/agents/{$agent->id}/conversations/{$conversation->id}/messages/{$message->id}/retry"
+        );
+
+        $response->assertStatus(422);
+        $response->assertJsonPath('message', 'Only failed assistant messages can be retried.');
+    }
+
+    public function test_retry_with_missing_request_snapshot_returns_422(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user);
+
+        [$project, $agent, $conversation] = $this->createAgentConversation();
+
+        $message = PromptMessage::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'I could not complete that request. Try again.',
+            'meta' => [
+                'status' => 'failed',
+                'retry' => [
+                    'count' => 0,
+                    'last_attempt_at' => now()->subMinute()->toISOString(),
+                ],
+                'request_snapshot' => null,
+            ],
+        ]);
+
+        $response = $this->postJson(
+            "/projects/{$project->uuid}/agents/{$agent->id}/conversations/{$conversation->id}/messages/{$message->id}/retry"
+        );
+
+        $response->assertStatus(422);
+        $response->assertJsonPath('message', 'Retry snapshot is unavailable.');
+        $response->assertJsonPath('assistant_message.meta.retry.count', 1);
+    }
+
     /**
      * @return array{0: Project, 1: Agent, 2: PromptConversation}
      */
     private function createAgentConversation(): array
     {
-        $project = Project::create([
+        $project = Project::factory()->create([
             'tenant_id' => currentTenantId(),
             'name' => 'Agent Project',
         ]);
 
-        $credential = ProviderCredential::create([
+        $credential = ProviderCredential::factory()->create([
             'tenant_id' => currentTenantId(),
             'provider' => 'openai',
             'name' => 'OpenAI',
-            'encrypted_api_key' => 'test-key',
         ]);
 
-        $agent = Agent::create([
+        $agent = Agent::factory()->create([
             'tenant_id' => currentTenantId(),
             'project_id' => $project->id,
             'name' => 'Content Buddy',
-            'description' => 'Assistant',
             'system_prompt_content' => 'System',
             'system_prompt_mode' => 'inline',
             'system_prompt_template_id' => null,
@@ -269,7 +345,7 @@ class AgentConversationRetryTest extends TestCase
             'max_context_messages' => 20,
         ]);
 
-        $conversation = PromptConversation::create([
+        $conversation = PromptConversation::factory()->create([
             'tenant_id' => currentTenantId(),
             'project_id' => $project->id,
             'agent_id' => $agent->id,

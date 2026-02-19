@@ -95,7 +95,7 @@ class AgentConversationController extends Controller
             'content' => $request->string('content'),
         ]);
 
-        $snapshot = [];
+        $snapshot = null;
 
         try {
             $snapshot = $chatService->buildRequestSnapshot($agent, $conversation);
@@ -138,7 +138,7 @@ class AgentConversationController extends Controller
                         'count' => 0,
                         'last_attempt_at' => now()->toISOString(),
                     ],
-                    'request_snapshot' => $snapshot,
+                    'request_snapshot' => is_array($snapshot) && $snapshot !== [] ? $snapshot : null,
                 ],
             ]);
 
@@ -149,6 +149,9 @@ class AgentConversationController extends Controller
         }
     }
 
+    /**
+     * Retry a failed assistant message for an existing agent conversation.
+     */
     public function retryMessage(
         Project $project,
         Agent $agent,
@@ -219,6 +222,12 @@ class AgentConversationController extends Controller
                 $message->content = $reply['content'];
                 $message->meta = $latestMeta;
                 $message->save();
+
+                $agent->recordUsage(
+                    messages: 1,
+                    tokensIn: $reply['usage']['prompt_tokens'] ?? 0,
+                    tokensOut: $reply['usage']['completion_tokens'] ?? 0
+                );
             } catch (Throwable $exception) {
                 $latestMeta['status'] = 'failed';
                 $latestMeta['error_message'] = $this->sanitizeErrorMessage($exception);
@@ -256,7 +265,14 @@ class AgentConversationController extends Controller
 
     private function assertConversationMessage(PromptConversation $conversation, PromptMessage $message): void
     {
-        if ($message->conversation_id !== $conversation->id) {
+        $messageConversationTenantId = PromptConversation::query()
+            ->whereKey($message->conversation_id)
+            ->value('tenant_id');
+
+        if (
+            $message->conversation_id !== $conversation->id
+            || $messageConversationTenantId !== $conversation->tenant_id
+        ) {
             abort(404);
         }
     }

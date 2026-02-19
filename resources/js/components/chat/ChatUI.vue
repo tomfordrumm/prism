@@ -388,7 +388,8 @@ const retryMessage = async (message: ChatMessage) => {
         });
     } finally {
         if (typeof message.id === 'number') {
-            const { [message.id]: _removed, ...rest } = retryingMessageIds.value;
+            const rest = { ...retryingMessageIds.value };
+            delete rest[message.id];
             retryingMessageIds.value = rest;
         }
     }
@@ -693,9 +694,9 @@ watch(
                                     <div class="whitespace-pre-wrap">{{ message.content }}</div>
                                     <div
                                         v-if="isFailedAssistantMessage(message)"
-                                        class="mt-3 flex items-center justify-between gap-2 border-t border-amber-200/80 pt-2 text-xs"
+                                        class="mt-3 flex items-center justify-between gap-2 border-t border-amber-200/80 pt-2 text-xs dark:border-amber-900/80"
                                     >
-                                        <span class="text-amber-700">{{ retryStatusLabel(message) }}</span>
+                                        <span class="text-amber-700 dark:text-amber-300">{{ retryStatusLabel(message) }}</span>
                                         <Button
                                             size="small"
                                             variant="text"

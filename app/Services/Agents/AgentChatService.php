@@ -24,6 +24,14 @@ class AgentChatService
         );
     }
 
+    /**
+     * @return array{
+     *     provider_credential_id: int,
+     *     model_name: string,
+     *     model_params: array<string, mixed>,
+     *     messages: array<int, array{role: string, content: string}>
+     * }
+     */
     public function buildRequestSnapshot(Agent $agent, PromptConversation $conversation): array
     {
         $providerCredentialId = $agent->provider_credential_id;
@@ -40,6 +48,22 @@ class AgentChatService
         ];
     }
 
+    /**
+     * @param  array{
+     *     provider_credential_id: int,
+     *     model_name: string,
+     *     model_params: array<string, mixed>,
+     *     messages: array<int, array{role: string, content: string}>
+     * }  $snapshot
+     * @return array{
+     *     content: string,
+     *     usage: array{
+     *         prompt_tokens: int,
+     *         completion_tokens: int,
+     *         total_tokens: int
+     *     }
+     * }
+     */
     public function generateReplyFromSnapshot(array $snapshot): array
     {
         $credentialId = data_get($snapshot, 'provider_credential_id');
