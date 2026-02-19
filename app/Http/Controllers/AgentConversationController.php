@@ -2,13 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\Agents\StoreAgentMessageRequest;
 use App\Models\Agent;
 use App\Models\Project;
 use App\Models\PromptConversation;
 use App\Models\PromptMessage;
 use App\Services\Agents\AgentChatService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -65,18 +65,14 @@ class AgentConversationController extends Controller
                 'created_at' => $conversation->created_at?->toISOString(),
                 'updated_at' => $conversation->updated_at?->toISOString(),
             ],
-            'messages' => $messages->map(fn ($message) => [
-                'id' => $message->id,
-                'role' => $message->role,
-                'content' => $message->content,
-                'meta' => $message->meta,
-                'created_at' => $message->created_at?->toISOString(),
-            ]),
+            'messages' => $messages->map(
+                fn (PromptMessage $message): array => $this->serializeMessage($message)
+            ),
         ]);
     }
 
     public function storeMessage(
-        Request $request,
+        StoreAgentMessageRequest $request,
         Project $project,
         Agent $agent,
         PromptConversation $conversation,
@@ -84,10 +80,6 @@ class AgentConversationController extends Controller
     ): JsonResponse {
         $this->assertAgentProject($agent, $project);
         $this->assertConversationAgent($conversation, $agent);
-
-        $request->validate([
-            'content' => 'required|string|max:10000',
-        ]);
 
         // Store user message
         $userMessage = $conversation->messages()->create([
@@ -176,7 +168,7 @@ class AgentConversationController extends Controller
             ], 422);
         }
 
-        $lock = Cache::lock("agent-chat-retry:message:{$message->id}", 10);
+        $lock = Cache::lock("agent-chat-retry:message:{$message->id}", 60);
 
         if (! $lock->get()) {
             return response()->json([
@@ -265,14 +257,7 @@ class AgentConversationController extends Controller
 
     private function assertConversationMessage(PromptConversation $conversation, PromptMessage $message): void
     {
-        $messageConversationTenantId = PromptConversation::query()
-            ->whereKey($message->conversation_id)
-            ->value('tenant_id');
-
-        if (
-            $message->conversation_id !== $conversation->id
-            || $messageConversationTenantId !== $conversation->tenant_id
-        ) {
+        if ($message->conversation_id !== $conversation->id) {
             abort(404);
         }
     }
@@ -286,11 +271,17 @@ class AgentConversationController extends Controller
 
     private function serializeMessage(PromptMessage $message): array
     {
+        $meta = is_array($message->meta) ? $message->meta : null;
+
+        if (is_array($meta)) {
+            unset($meta['request_snapshot']);
+        }
+
         return [
             'id' => $message->id,
             'role' => $message->role,
             'content' => $message->content,
-            'meta' => $message->meta,
+            'meta' => $meta,
             'created_at' => $message->created_at?->toISOString(),
         ];
     }

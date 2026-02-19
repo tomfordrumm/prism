@@ -136,15 +136,15 @@ const getCookie = (name: string) =>
         .find((row) => row.startsWith(`${name}=`))
         ?.split('=')[1] ?? '';
 
+const csrfToken = (): string =>
+    document
+        .querySelector('meta[name="csrf-token"]')
+        ?.getAttribute('content') ||
+    decodeURIComponent(getCookie('XSRF-TOKEN'));
+
 const ensureConversation = async (forceNew = false) => {
     if (conversationId.value || isBootstrapping.value) return;
     isBootstrapping.value = true;
-
-    const csrfToken =
-        document
-            .querySelector('meta[name="csrf-token"]')
-            ?.getAttribute('content') ||
-        decodeURIComponent(getCookie('XSRF-TOKEN'));
 
     let url: string;
     let body: Record<string, unknown>;
@@ -170,7 +170,7 @@ const ensureConversation = async (forceNew = false) => {
         headers: {
             'Content-Type': 'application/json',
             Accept: 'application/json',
-            ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
+            ...(csrfToken() ? { 'X-XSRF-TOKEN': csrfToken() } : {}),
         },
         credentials: 'same-origin',
         body: JSON.stringify(body),
@@ -192,12 +192,6 @@ const loadConversation = async (id: number) => {
     if (isBootstrapping.value) return;
     isBootstrapping.value = true;
 
-    const csrfToken =
-        document
-            .querySelector('meta[name="csrf-token"]')
-            ?.getAttribute('content') ||
-        decodeURIComponent(getCookie('XSRF-TOKEN'));
-
     let url: string;
     if (props.type === 'agent_chat' && props.agentId) {
         url = `/projects/${props.projectUuid}/agents/${props.agentId}/conversations/${id}`;
@@ -209,7 +203,7 @@ const loadConversation = async (id: number) => {
         method: 'GET',
         headers: {
             Accept: 'application/json',
-            ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
+            ...(csrfToken() ? { 'X-XSRF-TOKEN': csrfToken() } : {}),
         },
         credentials: 'same-origin',
     });
@@ -256,19 +250,13 @@ const deleteConversation = async (id: number) => {
     if (props.type !== 'agent_chat' || !props.agentId) return;
     if (!confirm('Are you sure you want to delete this conversation?')) return;
 
-    const csrfToken =
-        document
-            .querySelector('meta[name="csrf-token"]')
-            ?.getAttribute('content') ||
-        decodeURIComponent(getCookie('XSRF-TOKEN'));
-
     const response = await fetch(
         `/projects/${props.projectUuid}/agents/${props.agentId}/conversations/${id}`,
         {
             method: 'DELETE',
             headers: {
                 Accept: 'application/json',
-                ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
+                ...(csrfToken() ? { 'X-XSRF-TOKEN': csrfToken() } : {}),
             },
             credentials: 'same-origin',
         },
@@ -339,12 +327,6 @@ const retryMessage = async (message: ChatMessage) => {
         [message.id]: true,
     };
 
-    const csrfToken =
-        document
-            .querySelector('meta[name="csrf-token"]')
-            ?.getAttribute('content') ||
-        decodeURIComponent(getCookie('XSRF-TOKEN'));
-
     try {
         const response = await fetch(
             agentConversationMessageRoutes.retry.url({
@@ -357,7 +339,7 @@ const retryMessage = async (message: ChatMessage) => {
                 method: 'POST',
                 headers: {
                     Accept: 'application/json',
-                    ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
+                    ...(csrfToken() ? { 'X-XSRF-TOKEN': csrfToken() } : {}),
                 },
                 credentials: 'same-origin',
             }
@@ -412,12 +394,6 @@ const sendMessage = async () => {
 
     isSending.value = true;
 
-    const csrfToken =
-        document
-            .querySelector('meta[name="csrf-token"]')
-            ?.getAttribute('content') ||
-        decodeURIComponent(getCookie('XSRF-TOKEN'));
-
     try {
         let url: string;
         if (props.type === 'agent_chat' && props.agentId) {
@@ -435,7 +411,7 @@ const sendMessage = async () => {
             headers: {
                 'Content-Type': 'application/json',
                 Accept: 'application/json',
-                ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
+                ...(csrfToken() ? { 'X-XSRF-TOKEN': csrfToken() } : {}),
             },
             credentials: 'same-origin',
             body: JSON.stringify({
@@ -688,7 +664,7 @@ watch(
                                     :class="
                                         message.role === 'user'
                                             ? 'rounded-tr-sm bg-slate-200 text-slate-900 dark:bg-slate-700 dark:text-slate-100'
-                                            : 'rounded-tl-sm bg-slate-50'
+                                            : 'rounded-tl-sm bg-slate-50 dark:bg-slate-800 dark:text-slate-100'
                                     "
                                 >
                                     <div class="whitespace-pre-wrap">{{ message.content }}</div>

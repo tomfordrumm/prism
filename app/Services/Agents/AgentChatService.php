@@ -127,7 +127,19 @@ class AgentChatService
 
         // Conversation history (limited to max_context_messages)
         $history = $conversation->messages()
-            ->whereIn('role', ['user', 'assistant'])
+            ->where(function ($query): void {
+                $query
+                    ->where('role', 'user')
+                    ->orWhere(function ($assistantQuery): void {
+                        $assistantQuery
+                            ->where('role', 'assistant')
+                            ->where(function ($statusQuery): void {
+                                $statusQuery
+                                    ->whereNull('meta->status')
+                                    ->orWhere('meta->status', '!=', 'failed');
+                            });
+                    });
+            })
             ->orderBy('created_at', 'desc')
             ->limit($agent->max_context_messages)
             ->get()
