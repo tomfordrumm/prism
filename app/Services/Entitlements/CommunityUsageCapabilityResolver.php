@@ -8,8 +8,6 @@ final class CommunityUsageCapabilityResolver implements UsageCapabilityResolverI
 {
     public function forTenant(int $tenantId): UsageCapabilities
     {
-        unset($tenantId);
-
         return new UsageCapabilities([
             'run_count' => true,
             'input_tokens' => true,

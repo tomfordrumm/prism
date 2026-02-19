@@ -6,7 +6,6 @@ use App\Events\UsageMetered;
 use App\Services\Entitlements\Contracts\UsageCapabilityResolverInterface;
 use App\Services\Entitlements\EventUsageMeter;
 use App\Services\Entitlements\UsageCapabilities;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -39,9 +38,8 @@ class EventUsageMeterTest extends TestCase
                 return false;
             }
 
-            try {
-                Carbon::parse($event->occurredAt);
-            } catch (\Throwable) {
+            $parsedOccurredAt = \DateTimeImmutable::createFromFormat(DATE_ATOM, $event->occurredAt);
+            if ($parsedOccurredAt === false) {
                 return false;
             }
 
@@ -49,7 +47,7 @@ class EventUsageMeterTest extends TestCase
                 && $event->meter === 'run_count'
                 && $event->quantity === 2
                 && $event->context['run_id'] === 123
-                && str_contains($event->occurredAt, 'T');
+                && $parsedOccurredAt->format(DATE_ATOM) === $event->occurredAt;
         });
     }
 

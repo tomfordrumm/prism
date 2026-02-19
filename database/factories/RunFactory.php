@@ -18,7 +18,9 @@ class RunFactory extends Factory
     {
         return [
             'tenant_id' => Tenant::factory(),
-            'project_id' => Project::factory(),
+            'project_id' => Project::factory()->state(fn (array $attributes): array => [
+                'tenant_id' => $attributes['tenant_id'],
+            ]),
             'chain_id' => null,
             'dataset_id' => null,
             'test_case_id' => null,

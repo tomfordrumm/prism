@@ -37,8 +37,13 @@ class RerunRunAction
      */
     private function rerunChain(Project $project, Run $run): array
     {
+        $tenantId = currentTenantId();
+        if ($tenantId === null) {
+            abort(403);
+        }
+
         $chain = Chain::query()
-            ->where('tenant_id', currentTenantId())
+            ->where('tenant_id', $tenantId)
             ->where('project_id', $project->id)
             ->findOrFail($run->chain_id);
 
@@ -48,20 +53,20 @@ class RerunRunAction
 
         if ($run->dataset_id) {
             $dataset = Dataset::query()
-                ->where('tenant_id', currentTenantId())
+                ->where('tenant_id', $tenantId)
                 ->where('project_id', $project->id)
                 ->findOrFail($run->dataset_id);
 
             $dataset->load('testCases');
             $this->entitlementEnforcer->ensureCanRunChain(
-                tenantId: (int) currentTenantId(),
+                tenantId: $tenantId,
                 requestedRuns: $dataset->testCases->count(),
             );
 
             foreach ($dataset->testCases as $testCase) {
                 /** @var TestCase $testCase */
                 $newRun = Run::create([
-                    'tenant_id' => currentTenantId(),
+                    'tenant_id' => $tenantId,
                     'project_id' => $project->id,
                     'chain_id' => $chain->id,
                     'input' => $testCase->input_variables ?? [],
@@ -78,10 +83,10 @@ class RerunRunAction
             return ['type' => 'dataset', 'run' => null];
         }
 
-        $this->entitlementEnforcer->ensureCanRunChain((int) currentTenantId());
+        $this->entitlementEnforcer->ensureCanRunChain($tenantId);
 
         $newRun = Run::create([
-            'tenant_id' => currentTenantId(),
+            'tenant_id' => $tenantId,
             'project_id' => $project->id,
             'chain_id' => $chain->id,
             'input' => $run->input ?? [],
@@ -102,6 +107,11 @@ class RerunRunAction
      */
     private function rerunPrompt(Project $project, Run $run): array
     {
+        $tenantId = currentTenantId();
+        if ($tenantId === null) {
+            abort(403);
+        }
+
         $snapshot = is_array($run->chain_snapshot) ? $run->chain_snapshot : [];
         $node = $snapshot[0] ?? [];
 
@@ -114,23 +124,23 @@ class RerunRunAction
         }
 
         $promptTemplate = PromptTemplate::query()
-            ->where('tenant_id', currentTenantId())
+            ->where('tenant_id', $tenantId)
             ->where('project_id', $project->id)
             ->findOrFail($promptTemplateId);
 
         $providerCredential = ProviderCredential::query()
-            ->where('tenant_id', currentTenantId())
+            ->where('tenant_id', $tenantId)
             ->findOrFail($providerCredentialId);
 
         if ($run->dataset_id) {
             $dataset = Dataset::query()
-                ->where('tenant_id', currentTenantId())
+                ->where('tenant_id', $tenantId)
                 ->where('project_id', $project->id)
                 ->findOrFail($run->dataset_id);
 
             $dataset->load('testCases');
             $this->entitlementEnforcer->ensureCanRunChain(
-                tenantId: (int) currentTenantId(),
+                tenantId: $tenantId,
                 requestedRuns: $dataset->testCases->count(),
             );
 
@@ -155,7 +165,7 @@ class RerunRunAction
         }
 
         $variables = $run->input ?? [];
-        $this->entitlementEnforcer->ensureCanRunChain((int) currentTenantId());
+        $this->entitlementEnforcer->ensureCanRunChain($tenantId);
 
         $newRun = $this->promptRunner->run(
             $project,

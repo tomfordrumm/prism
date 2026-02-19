@@ -28,6 +28,15 @@ final class QuotaDecision
      */
     public static function allowWithinLimit(int $limit, int $used, array $meta = []): self
     {
+        if ($used > $limit) {
+            return self::deny(
+                limit: $limit,
+                used: $used,
+                reason: 'quota_exceeded',
+                meta: $meta,
+            );
+        }
+
         return new self(allowed: true, limit: $limit, used: $used, meta: $meta);
     }
 

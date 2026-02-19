@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Tenant;
 use App\Models\User;
 use App\Services\Routing\Contracts\HomeRouteHandlerInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -22,7 +23,7 @@ class HomeRouteDelegationTest extends TestCase
     public function test_home_route_uses_core_fallback_for_authenticated_users(): void
     {
         $user = User::factory()->create();
-        $tenant = \App\Models\Tenant::create(['name' => 'Acme']);
+        $tenant = Tenant::factory()->create(['name' => 'Acme']);
         $user->tenants()->attach($tenant->id, ['role' => 'owner']);
         $this->actingAs($user);
 

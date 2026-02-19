@@ -45,6 +45,22 @@ class ProjectLimitEnforcementTest extends TestCase
         $response->assertSessionHasErrors('entitlements');
         $this->assertDatabaseMissing('projects', ['name' => 'Denied Project']);
     }
+
+    public function test_user_cannot_create_project_when_quota_is_denied(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user);
+        $this->app->bind(EntitlementServiceInterface::class, DenyProjectQuotaEntitlementsFake::class);
+
+        $response = $this->from(route('projects.create'))->post(route('projects.store'), [
+            'name' => 'Denied By Quota',
+            'description' => 'Blocked',
+        ]);
+
+        $response->assertRedirect(route('projects.create'));
+        $response->assertSessionHasErrors('entitlements');
+        $this->assertDatabaseMissing('projects', ['name' => 'Denied By Quota']);
+    }
 }
 
 final class DenyProjectCreationEntitlementsFake implements EntitlementServiceInterface
@@ -60,6 +76,23 @@ final class DenyProjectCreationEntitlementsFake implements EntitlementServiceInt
 
     public function checkQuota(int $tenantId, string $quota, int $requestedUnits = 1, array $context = []): QuotaDecision
     {
+        return QuotaDecision::allowUnlimited();
+    }
+}
+
+final class DenyProjectQuotaEntitlementsFake implements EntitlementServiceInterface
+{
+    public function checkFeatureAccess(int $tenantId, string $feature, array $context = []): EntitlementDecision
+    {
+        return EntitlementDecision::allow();
+    }
+
+    public function checkQuota(int $tenantId, string $quota, int $requestedUnits = 1, array $context = []): QuotaDecision
+    {
+        if ($quota === 'project_count') {
+            return QuotaDecision::deny(1, 1, 'project_quota_exceeded');
+        }
+
         return QuotaDecision::allowUnlimited();
     }
 }

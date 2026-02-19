@@ -21,15 +21,15 @@ class EntitlementEnforcerCompatibilityTest extends TestCase
         $enforcer->ensureCanRunChain(tenantId: 11, requestedRuns: 3);
 
         $this->assertSame([
-            ['tenant_id' => 11, 'feature' => 'canCreateProject', 'context' => ['tenant_id' => 11]],
-            ['tenant_id' => 11, 'feature' => 'canInviteMember', 'context' => ['tenant_id' => 11]],
-            ['tenant_id' => 11, 'feature' => 'canRunChain', 'context' => ['tenant_id' => 11]],
+            ['tenant_id' => 11, 'feature' => EntitlementEnforcer::FEATURE_CAN_CREATE_PROJECT, 'context' => ['tenant_id' => 11]],
+            ['tenant_id' => 11, 'feature' => EntitlementEnforcer::FEATURE_CAN_INVITE_MEMBER, 'context' => ['tenant_id' => 11]],
+            ['tenant_id' => 11, 'feature' => EntitlementEnforcer::FEATURE_CAN_RUN_CHAIN, 'context' => ['tenant_id' => 11]],
         ], $spy->featureChecks);
 
         $this->assertSame([
-            ['tenant_id' => 11, 'quota' => 'project_count', 'requested_units' => 1, 'context' => ['tenant_id' => 11]],
-            ['tenant_id' => 11, 'quota' => 'active_members', 'requested_units' => 1, 'context' => ['tenant_id' => 11]],
-            ['tenant_id' => 11, 'quota' => 'run_count', 'requested_units' => 3, 'context' => ['tenant_id' => 11]],
+            ['tenant_id' => 11, 'quota' => EntitlementEnforcer::QUOTA_PROJECT_COUNT, 'requested_units' => 1, 'context' => ['tenant_id' => 11]],
+            ['tenant_id' => 11, 'quota' => EntitlementEnforcer::QUOTA_ACTIVE_MEMBERS, 'requested_units' => 1, 'context' => ['tenant_id' => 11]],
+            ['tenant_id' => 11, 'quota' => EntitlementEnforcer::QUOTA_RUN_COUNT, 'requested_units' => 3, 'context' => ['tenant_id' => 11]],
         ], $spy->quotaChecks);
     }
 
@@ -51,6 +51,21 @@ class EntitlementEnforcerCompatibilityTest extends TestCase
             used: 100,
             reason: 'quota_exceeded',
         );
+
+        $enforcer = new EntitlementEnforcer($spy);
+
+        try {
+            $enforcer->ensureCanRunChain(tenantId: 9, requestedRuns: 1);
+            $this->fail('Expected ValidationException was not thrown.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('entitlements', $exception->errors());
+        }
+    }
+
+    public function test_enforcer_throws_entitlements_validation_error_on_denied_feature(): void
+    {
+        $spy = new EntitlementContractSpy;
+        $spy->featureDecision = EntitlementDecision::deny('feature_denied');
 
         $enforcer = new EntitlementEnforcer($spy);
 

@@ -14,7 +14,7 @@ class UsageMetered
     /**
      * @param  array<string, mixed>  $context
      */
-    public function __construct(
+    private function __construct(
         public readonly int $tenantId,
         public readonly string $meter,
         public readonly int $quantity,

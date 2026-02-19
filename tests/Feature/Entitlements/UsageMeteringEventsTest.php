@@ -26,12 +26,12 @@ class UsageMeteringEventsTest extends TestCase
         $user = User::factory()->create();
         $this->actingAs($user);
 
-        $project = Project::create([
+        $project = Project::factory()->create([
             'tenant_id' => currentTenantId(),
             'name' => 'Demo',
         ]);
 
-        $template = PromptTemplate::create([
+        $template = PromptTemplate::factory()->create([
             'tenant_id' => currentTenantId(),
             'project_id' => $project->id,
             'name' => 'Greeting',
@@ -44,11 +44,10 @@ class UsageMeteringEventsTest extends TestCase
             'created_by' => $user->id,
         ]);
 
-        $credential = ProviderCredential::create([
+        $credential = ProviderCredential::factory()->create([
             'tenant_id' => currentTenantId(),
             'provider' => 'anthropic',
             'name' => 'Default',
-            'encrypted_api_key' => 'secret',
         ]);
 
         $this->post(route('projects.prompts.run', [$project, $template]), [
@@ -64,6 +63,7 @@ class UsageMeteringEventsTest extends TestCase
                 && ($event->context['project_id'] ?? null) === $project->id
                 && ($event->context['run_id'] ?? null) !== null;
         });
+        Event::assertDispatchedTimes(UsageMetered::class, 1);
         Bus::assertDispatched(ExecuteRunJob::class);
     }
 

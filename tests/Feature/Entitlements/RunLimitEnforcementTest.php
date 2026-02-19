@@ -28,25 +28,24 @@ class RunLimitEnforcementTest extends TestCase
         $this->actingAs($user);
         $this->app->bind(EntitlementServiceInterface::class, DenyRunFeatureEntitlementsFake::class);
 
-        $project = Project::create([
+        $project = Project::factory()->create([
             'tenant_id' => currentTenantId(),
             'name' => 'Demo',
         ]);
 
-        $credential = ProviderCredential::create([
+        $credential = ProviderCredential::factory()->create([
             'tenant_id' => currentTenantId(),
             'provider' => 'openai',
             'name' => 'Sandbox',
-            'encrypted_api_key' => 'secret',
         ]);
 
-        $chain = Chain::create([
+        $chain = Chain::factory()->create([
             'tenant_id' => currentTenantId(),
             'project_id' => $project->id,
             'name' => 'Chain',
         ]);
 
-        ChainNode::create([
+        ChainNode::factory()->create([
             'tenant_id' => currentTenantId(),
             'chain_id' => $chain->id,
             'name' => 'Step 1',
@@ -78,12 +77,12 @@ class RunLimitEnforcementTest extends TestCase
         $this->actingAs($user);
         $this->app->bind(EntitlementServiceInterface::class, DenyRunQuotaEntitlementsFake::class);
 
-        $project = Project::create([
+        $project = Project::factory()->create([
             'tenant_id' => currentTenantId(),
             'name' => 'Demo',
         ]);
 
-        $template = PromptTemplate::create([
+        $template = PromptTemplate::factory()->create([
             'tenant_id' => currentTenantId(),
             'project_id' => $project->id,
             'name' => 'Greeting',
@@ -96,11 +95,10 @@ class RunLimitEnforcementTest extends TestCase
             'created_by' => $user->id,
         ]);
 
-        $credential = ProviderCredential::create([
+        $credential = ProviderCredential::factory()->create([
             'tenant_id' => currentTenantId(),
             'provider' => 'anthropic',
             'name' => 'Default',
-            'encrypted_api_key' => 'secret',
         ]);
 
         $response = $this->from(route('projects.prompts.index', $project))

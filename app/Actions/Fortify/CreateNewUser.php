@@ -66,7 +66,10 @@ class CreateNewUser implements CreatesNewUsers
                 );
             });
 
-            $this->entitlementEnforcer->ensureCanCreateProject($tenant->id);
+            if ($tenant->projects()->exists()) {
+                $this->entitlementEnforcer->ensureCanCreateProject($tenant->id);
+            }
+
             Project::create([
                 'tenant_id' => $tenant->id,
                 'name' => 'Personal',

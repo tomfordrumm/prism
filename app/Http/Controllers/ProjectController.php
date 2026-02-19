@@ -36,10 +36,15 @@ class ProjectController extends Controller
 
     public function store(StoreProjectRequest $request): RedirectResponse
     {
-        $this->entitlementEnforcer->ensureCanCreateProject((int) currentTenantId());
+        $tenantId = currentTenantId();
+        if ($tenantId === null) {
+            abort(403);
+        }
+
+        $this->entitlementEnforcer->ensureCanCreateProject($tenantId);
 
         $project = Project::create([
-            'tenant_id' => currentTenantId(),
+            'tenant_id' => $tenantId,
             'name' => $request->string('name'),
             'description' => $request->input('description'),
         ]);
