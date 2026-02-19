@@ -6,7 +6,9 @@ use App\Events\UsageMetered;
 use App\Services\Entitlements\Contracts\UsageCapabilityResolverInterface;
 use App\Services\Entitlements\EventUsageMeter;
 use App\Services\Entitlements\UsageCapabilities;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class EventUsageMeterTest extends TestCase
@@ -33,12 +35,21 @@ class EventUsageMeterTest extends TestCase
         );
 
         Event::assertDispatched(UsageMetered::class, function (UsageMetered $event): bool {
+            if (! Str::isUuid($event->eventId)) {
+                return false;
+            }
+
+            try {
+                Carbon::parse($event->occurredAt);
+            } catch (\Throwable) {
+                return false;
+            }
+
             return $event->tenantId === 10
                 && $event->meter === 'run_count'
                 && $event->quantity === 2
                 && $event->context['run_id'] === 123
-                && $event->eventId !== ''
-                && $event->occurredAt !== '';
+                && str_contains($event->occurredAt, 'T');
         });
     }
 
