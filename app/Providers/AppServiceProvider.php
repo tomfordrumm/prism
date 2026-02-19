@@ -10,6 +10,8 @@ use App\Services\Entitlements\Contracts\EntitlementServiceInterface;
 use App\Services\Entitlements\Contracts\UsageCapabilityResolverInterface;
 use App\Services\Entitlements\Contracts\UsageMeterInterface;
 use App\Services\Entitlements\EventUsageMeter;
+use App\Services\Routing\Contracts\HomeRouteHandlerInterface;
+use App\Services\Routing\CoreHomeRouteHandler;
 use App\Support\TenantManager;
 use Illuminate\Support\ServiceProvider;
 
@@ -24,6 +26,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singletonIf(EntitlementServiceInterface::class, CommunityEntitlementService::class);
         $this->app->singletonIf(UsageCapabilityResolverInterface::class, CommunityUsageCapabilityResolver::class);
         $this->app->singletonIf(UsageMeterInterface::class, EventUsageMeter::class);
+        $this->app->singletonIf(HomeRouteHandlerInterface::class, CoreHomeRouteHandler::class);
         $this->registerHelpers();
     }
 
