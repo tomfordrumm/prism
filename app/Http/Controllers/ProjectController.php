@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\Projects\StoreProjectRequest;
 use App\Models\Project;
 use App\Models\PromptVersion;
+use App\Services\Entitlements\EntitlementEnforcer;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -13,6 +14,10 @@ use Inertia\Response;
 
 class ProjectController extends Controller
 {
+    public function __construct(
+        private EntitlementEnforcer $entitlementEnforcer
+    ) {}
+
     public function index(): Response
     {
         $projects = Project::query()
@@ -31,8 +36,15 @@ class ProjectController extends Controller
 
     public function store(StoreProjectRequest $request): RedirectResponse
     {
+        $tenantId = currentTenantId();
+        if ($tenantId === null) {
+            abort(403);
+        }
+
+        $this->entitlementEnforcer->ensureCanCreateProject($tenantId);
+
         $project = Project::create([
-            'tenant_id' => currentTenantId(),
+            'tenant_id' => $tenantId,
             'name' => $request->string('name'),
             'description' => $request->input('description'),
         ]);

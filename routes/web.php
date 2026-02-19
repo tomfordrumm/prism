@@ -15,15 +15,12 @@ use App\Http\Controllers\ProviderCredentialController;
 use App\Http\Controllers\RunController;
 use App\Http\Controllers\SystemSettingsController;
 use App\Http\Controllers\TenantController;
+use App\Services\Routing\Contracts\HomeRouteHandlerInterface;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
 Route::get('/', function () {
-    if (auth()->check()) {
-        return redirect()->route('projects.index');
-    }
-
-    return redirect()->route('login');
+    return app(HomeRouteHandlerInterface::class)->handle();
 })->name('home');
 
 Route::middleware(['auth', 'verified'])->group(function () {
