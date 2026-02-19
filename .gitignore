@@ -10,6 +10,10 @@
 /resources/js/routes
 /resources/js/wayfinder
 /vendor
+/cloud
+/composer.cloud.json
+/composer.cloud.lock
+/composer-cloud
 .DS_Store
 .env
 .env.backup
