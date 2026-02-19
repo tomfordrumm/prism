@@ -4,7 +4,9 @@ namespace App\Services\Agents;
 
 use App\Models\Agent;
 use App\Models\PromptConversation;
+use App\Models\ProviderCredential;
 use App\Services\Llm\LlmService;
+use RuntimeException;
 
 class AgentChatService
 {
@@ -17,15 +19,63 @@ class AgentChatService
      */
     public function generateReply(Agent $agent, PromptConversation $conversation): array
     {
-        // Build message history (respecting max_context_messages)
-        $messages = $this->buildMessages($agent, $conversation);
+        return $this->generateReplyFromSnapshot(
+            $this->buildRequestSnapshot($agent, $conversation)
+        );
+    }
 
-        // Call LLM
+    public function buildRequestSnapshot(Agent $agent, PromptConversation $conversation): array
+    {
+        $providerCredentialId = $agent->provider_credential_id;
+
+        if (! $providerCredentialId) {
+            throw new RuntimeException('No provider credential configured for agent.');
+        }
+
+        return [
+            'provider_credential_id' => $providerCredentialId,
+            'model_name' => $agent->model_name,
+            'model_params' => $agent->model_params ?? [],
+            'messages' => $this->buildMessages($agent, $conversation),
+        ];
+    }
+
+    public function generateReplyFromSnapshot(array $snapshot): array
+    {
+        $credentialId = data_get($snapshot, 'provider_credential_id');
+        $modelName = data_get($snapshot, 'model_name');
+        $modelParams = data_get($snapshot, 'model_params', []);
+        $messages = data_get($snapshot, 'messages', []);
+
+        if (! is_int($credentialId) || $credentialId <= 0) {
+            throw new RuntimeException('Retry snapshot is missing provider credential.');
+        }
+
+        if (! is_string($modelName) || $modelName === '') {
+            throw new RuntimeException('Retry snapshot is missing model name.');
+        }
+
+        if (! is_array($modelParams)) {
+            throw new RuntimeException('Retry snapshot model params are invalid.');
+        }
+
+        if (! is_array($messages)) {
+            throw new RuntimeException('Retry snapshot messages are invalid.');
+        }
+
+        $credential = ProviderCredential::query()
+            ->where('tenant_id', currentTenantId())
+            ->find($credentialId);
+
+        if (! $credential) {
+            throw new RuntimeException('Retry provider credential is unavailable.');
+        }
+
         $response = $this->llmService->call(
-            $agent->providerCredential,
-            $agent->model_name,
+            $credential,
+            $modelName,
             $messages,
-            $agent->model_params ?? []
+            $modelParams
         );
 
         return [

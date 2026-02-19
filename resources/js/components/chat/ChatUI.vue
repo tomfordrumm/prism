@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import Icon from '@/components/Icon.vue';
+import agentConversationMessageRoutes from '@/routes/projects/agents/conversations/messages';
 import Button from 'primevue/button';
 import { usePromptDiff } from '@/composables/usePromptDiff';
 
@@ -98,6 +99,7 @@ const conversationId = ref<number | null>(null);
 const messages = ref<ChatMessage[]>([]);
 const input = ref('');
 const isSending = ref(false);
+const retryingMessageIds = ref<Record<number, boolean>>({});
 const isBootstrapping = ref(false);
 const lastContextKey = ref<string | number | null>(props.contextKey);
 const isHistoryCollapsed = ref(false);
@@ -281,6 +283,117 @@ const deleteConversation = async (id: number) => {
     emit('conversation-deleted', id);
 };
 
+const isFailedAssistantMessage = (message: ChatMessage): boolean => {
+    if (message.role !== 'assistant' || !message.meta) {
+        return false;
+    }
+
+    return message.meta.status === 'failed';
+};
+
+const retryCount = (message: ChatMessage): number => {
+    if (!message.meta) {
+        return 0;
+    }
+
+    const count = (message.meta.retry as { count?: unknown } | undefined)?.count;
+
+    return typeof count === 'number' ? count : 0;
+};
+
+const isRetrying = (messageId: number | string): boolean => {
+    if (typeof messageId !== 'number') {
+        return false;
+    }
+
+    return retryingMessageIds.value[messageId] === true;
+};
+
+const retryStatusLabel = (message: ChatMessage): string => {
+    if (isRetrying(message.id)) {
+        return 'Retrying...';
+    }
+
+    return retryCount(message) > 0 ? 'Failed again' : 'Failed';
+};
+
+const replaceMessage = (nextMessage: ChatMessage): void => {
+    messages.value = messages.value.map((message) =>
+        message.id === nextMessage.id ? nextMessage : message
+    );
+};
+
+const retryMessage = async (message: ChatMessage) => {
+    if (
+        props.type !== 'agent_chat' ||
+        !props.agentId ||
+        !conversationId.value ||
+        typeof message.id !== 'number' ||
+        isRetrying(message.id)
+    ) {
+        return;
+    }
+
+    retryingMessageIds.value = {
+        ...retryingMessageIds.value,
+        [message.id]: true,
+    };
+
+    const csrfToken =
+        document
+            .querySelector('meta[name="csrf-token"]')
+            ?.getAttribute('content') ||
+        decodeURIComponent(getCookie('XSRF-TOKEN'));
+
+    try {
+        const response = await fetch(
+            agentConversationMessageRoutes.retry.url({
+                project: props.projectUuid,
+                agent: props.agentId,
+                conversation: conversationId.value,
+                message: message.id,
+            }),
+            {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
+                },
+                credentials: 'same-origin',
+            }
+        );
+
+        const payload = await response.json().catch(() => null);
+        const assistantMessage = payload?.assistant_message;
+
+        if (assistantMessage) {
+            replaceMessage(assistantMessage);
+        }
+
+        if (!response.ok && !assistantMessage) {
+            throw new Error(payload?.message ?? 'Retry failed.');
+        }
+    } catch {
+        replaceMessage({
+            ...message,
+            meta: {
+                ...(message.meta ?? {}),
+                status: 'failed',
+                error_message: 'Retry failed. Please try again.',
+                retry: {
+                    count: retryCount(message) + 1,
+                    last_attempt_at: new Date().toISOString(),
+                },
+            },
+        });
+    } finally {
+        if (typeof message.id === 'number') {
+            const { [message.id]: _removed, ...rest } = retryingMessageIds.value;
+            retryingMessageIds.value = rest;
+        }
+    }
+};
+
 const sendMessage = async () => {
     if (!hasInput.value || isSending.value) return;
     await ensureConversation();
@@ -307,7 +420,11 @@ const sendMessage = async () => {
     try {
         let url: string;
         if (props.type === 'agent_chat' && props.agentId) {
-            url = `/projects/${props.projectUuid}/agents/${props.agentId}/conversations/${conversationId.value}/messages`;
+            url = agentConversationMessageRoutes.store.url({
+                project: props.projectUuid,
+                agent: props.agentId,
+                conversation: conversationId.value,
+            });
         } else {
             url = `/projects/${props.projectUuid}/prompt-conversations/${conversationId.value}/messages`;
         }
@@ -326,6 +443,10 @@ const sendMessage = async () => {
         });
 
         const payload = await response.json().catch(() => null);
+        if (!response.ok) {
+            throw new Error(payload?.message ?? 'Failed to send message.');
+        }
+
         const userMessage = payload?.user_message;
         const assistantMessage = payload?.assistant_message;
 
@@ -370,6 +491,10 @@ const sendMessage = async () => {
                 });
             }
         }
+    } catch {
+        messages.value = messages.value.filter((message) => message.id !== tempId);
+        input.value = content;
+        nextTick(autoResizeInput);
     } finally {
         isSending.value = false;
     }
@@ -566,6 +691,20 @@ watch(
                                     "
                                 >
                                     <div class="whitespace-pre-wrap">{{ message.content }}</div>
+                                    <div
+                                        v-if="isFailedAssistantMessage(message)"
+                                        class="mt-3 flex items-center justify-between gap-2 border-t border-amber-200/80 pt-2 text-xs"
+                                    >
+                                        <span class="text-amber-700">{{ retryStatusLabel(message) }}</span>
+                                        <Button
+                                            size="small"
+                                            variant="text"
+                                            :disabled="isRetrying(message.id)"
+                                            @click="retryMessage(message)"
+                                        >
+                                            Try again
+                                        </Button>
+                                    </div>
                                 </div>
                                 <div
                                     v-if="message.role === 'user'"
