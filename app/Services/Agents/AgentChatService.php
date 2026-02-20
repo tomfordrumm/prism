@@ -4,7 +4,9 @@ namespace App\Services\Agents;
 
 use App\Models\Agent;
 use App\Models\PromptConversation;
+use App\Models\ProviderCredential;
 use App\Services\Llm\LlmService;
+use RuntimeException;
 
 class AgentChatService
 {
@@ -17,15 +19,87 @@ class AgentChatService
      */
     public function generateReply(Agent $agent, PromptConversation $conversation): array
     {
-        // Build message history (respecting max_context_messages)
-        $messages = $this->buildMessages($agent, $conversation);
+        return $this->generateReplyFromSnapshot(
+            $this->buildRequestSnapshot($agent, $conversation)
+        );
+    }
 
-        // Call LLM
+    /**
+     * @return array{
+     *     provider_credential_id: int,
+     *     model_name: string,
+     *     model_params: array<string, mixed>,
+     *     messages: array<int, array{role: string, content: string}>
+     * }
+     */
+    public function buildRequestSnapshot(Agent $agent, PromptConversation $conversation): array
+    {
+        $providerCredentialId = $agent->provider_credential_id;
+
+        if (! $providerCredentialId) {
+            throw new RuntimeException('No provider credential configured for agent.');
+        }
+
+        return [
+            'provider_credential_id' => $providerCredentialId,
+            'model_name' => $agent->model_name,
+            'model_params' => $agent->model_params ?? [],
+            'messages' => $this->buildMessages($agent, $conversation),
+        ];
+    }
+
+    /**
+     * @param  array{
+     *     provider_credential_id: int,
+     *     model_name: string,
+     *     model_params: array<string, mixed>,
+     *     messages: array<int, array{role: string, content: string}>
+     * }  $snapshot
+     * @return array{
+     *     content: string,
+     *     usage: array{
+     *         prompt_tokens: int,
+     *         completion_tokens: int,
+     *         total_tokens: int
+     *     }
+     * }
+     */
+    public function generateReplyFromSnapshot(array $snapshot): array
+    {
+        $credentialId = data_get($snapshot, 'provider_credential_id');
+        $modelName = data_get($snapshot, 'model_name');
+        $modelParams = data_get($snapshot, 'model_params', []);
+        $messages = data_get($snapshot, 'messages', []);
+
+        if (! is_int($credentialId) || $credentialId <= 0) {
+            throw new RuntimeException('Retry snapshot is missing provider credential.');
+        }
+
+        if (! is_string($modelName) || $modelName === '') {
+            throw new RuntimeException('Retry snapshot is missing model name.');
+        }
+
+        if (! is_array($modelParams)) {
+            throw new RuntimeException('Retry snapshot model params are invalid.');
+        }
+
+        if (! is_array($messages)) {
+            throw new RuntimeException('Retry snapshot messages are invalid.');
+        }
+
+        $credential = ProviderCredential::query()
+            ->where('tenant_id', currentTenantId())
+            ->find($credentialId);
+
+        if (! $credential) {
+            throw new RuntimeException('Retry provider credential is unavailable.');
+        }
+
         $response = $this->llmService->call(
-            $agent->providerCredential,
-            $agent->model_name,
+            $credential,
+            $modelName,
             $messages,
-            $agent->model_params ?? []
+            $modelParams
         );
 
         return [
@@ -53,7 +127,19 @@ class AgentChatService
 
         // Conversation history (limited to max_context_messages)
         $history = $conversation->messages()
-            ->whereIn('role', ['user', 'assistant'])
+            ->where(function ($query): void {
+                $query
+                    ->where('role', 'user')
+                    ->orWhere(function ($assistantQuery): void {
+                        $assistantQuery
+                            ->where('role', 'assistant')
+                            ->where(function ($statusQuery): void {
+                                $statusQuery
+                                    ->whereNull('meta->status')
+                                    ->orWhere('meta->status', '!=', 'failed');
+                            });
+                    });
+            })
             ->orderBy('created_at', 'desc')
             ->limit($agent->max_context_messages)
             ->get()

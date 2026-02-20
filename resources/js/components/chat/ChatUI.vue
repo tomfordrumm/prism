@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import Icon from '@/components/Icon.vue';
+import {
+    retry as retryAgentConversationMessage,
+    store as storeAgentConversationMessage,
+} from '@/routes/projects/agents/conversations/messages';
+import { retry as retryPromptConversationMessage } from '@/routes/projects/prompt-conversations/messages';
 import Button from 'primevue/button';
+import { useToast } from 'primevue/usetoast';
 import { usePromptDiff } from '@/composables/usePromptDiff';
 
 type ChatRole = 'user' | 'assistant' | 'system';
@@ -93,11 +99,13 @@ const emit = defineEmits<{
     (event: 'conversation-deleted', conversationId: number): void;
     (event: 'message-sent', messages: ChatMessage[]): void;
 }>();
+const toast = useToast();
 
 const conversationId = ref<number | null>(null);
 const messages = ref<ChatMessage[]>([]);
 const input = ref('');
 const isSending = ref(false);
+const retryingMessageIds = ref<Record<number, boolean>>({});
 const isBootstrapping = ref(false);
 const lastContextKey = ref<string | number | null>(props.contextKey);
 const isHistoryCollapsed = ref(false);
@@ -134,15 +142,24 @@ const getCookie = (name: string) =>
         .find((row) => row.startsWith(`${name}=`))
         ?.split('=')[1] ?? '';
 
+// Meta token goes to X-CSRF-TOKEN, decoded cookie token goes to X-XSRF-TOKEN.
+const csrfHeaders = (): Record<string, string> => {
+    const csrfToken = document
+        .querySelector('meta[name="csrf-token"]')
+        ?.getAttribute('content');
+    const xsrfCookie = getCookie('XSRF-TOKEN');
+    const xsrfToken = xsrfCookie ? decodeURIComponent(xsrfCookie) : '';
+
+    return {
+        ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {}),
+        ...(xsrfToken ? { 'X-XSRF-TOKEN': xsrfToken } : {}),
+    };
+};
+
 const ensureConversation = async (forceNew = false) => {
     if (conversationId.value || isBootstrapping.value) return;
     isBootstrapping.value = true;
-
-    const csrfToken =
-        document
-            .querySelector('meta[name="csrf-token"]')
-            ?.getAttribute('content') ||
-        decodeURIComponent(getCookie('XSRF-TOKEN'));
+    const headers = csrfHeaders();
 
     let url: string;
     let body: Record<string, unknown>;
@@ -168,7 +185,7 @@ const ensureConversation = async (forceNew = false) => {
         headers: {
             'Content-Type': 'application/json',
             Accept: 'application/json',
-            ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
+            ...headers,
         },
         credentials: 'same-origin',
         body: JSON.stringify(body),
@@ -189,12 +206,7 @@ const ensureConversation = async (forceNew = false) => {
 const loadConversation = async (id: number) => {
     if (isBootstrapping.value) return;
     isBootstrapping.value = true;
-
-    const csrfToken =
-        document
-            .querySelector('meta[name="csrf-token"]')
-            ?.getAttribute('content') ||
-        decodeURIComponent(getCookie('XSRF-TOKEN'));
+    const headers = csrfHeaders();
 
     let url: string;
     if (props.type === 'agent_chat' && props.agentId) {
@@ -207,7 +219,7 @@ const loadConversation = async (id: number) => {
         method: 'GET',
         headers: {
             Accept: 'application/json',
-            ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
+            ...headers,
         },
         credentials: 'same-origin',
     });
@@ -253,12 +265,7 @@ const createNewConversation = () => {
 const deleteConversation = async (id: number) => {
     if (props.type !== 'agent_chat' || !props.agentId) return;
     if (!confirm('Are you sure you want to delete this conversation?')) return;
-
-    const csrfToken =
-        document
-            .querySelector('meta[name="csrf-token"]')
-            ?.getAttribute('content') ||
-        decodeURIComponent(getCookie('XSRF-TOKEN'));
+    const headers = csrfHeaders();
 
     const response = await fetch(
         `/projects/${props.projectUuid}/agents/${props.agentId}/conversations/${id}`,
@@ -266,7 +273,7 @@ const deleteConversation = async (id: number) => {
             method: 'DELETE',
             headers: {
                 Accept: 'application/json',
-                ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
+                ...headers,
             },
             credentials: 'same-origin',
         },
@@ -281,10 +288,134 @@ const deleteConversation = async (id: number) => {
     emit('conversation-deleted', id);
 };
 
+const isFailedAssistantMessage = (message: ChatMessage): boolean => {
+    if (message.role !== 'assistant' || !message.meta) {
+        return false;
+    }
+
+    return message.meta.status === 'failed';
+};
+
+const retryCount = (message: ChatMessage): number => {
+    if (!message.meta) {
+        return 0;
+    }
+
+    const count = (message.meta.retry as { count?: unknown } | undefined)?.count;
+
+    return typeof count === 'number' ? count : 0;
+};
+
+const isRetrying = (messageId: number | string): boolean => {
+    if (typeof messageId !== 'number') {
+        return false;
+    }
+
+    return retryingMessageIds.value[messageId] === true;
+};
+
+const retryStatusLabel = (message: ChatMessage): string => {
+    if (isRetrying(message.id)) {
+        return 'Retrying...';
+    }
+
+    return retryCount(message) > 0 ? 'Failed again' : 'Failed';
+};
+
+const replaceMessage = (nextMessage: ChatMessage): void => {
+    messages.value = messages.value.map((message) =>
+        message.id === nextMessage.id ? nextMessage : message
+    );
+};
+
+const retryMessage = async (message: ChatMessage) => {
+    if (
+        !conversationId.value ||
+        typeof message.id !== 'number' ||
+        isRetrying(message.id)
+    ) {
+        return;
+    }
+
+    retryingMessageIds.value = {
+        ...retryingMessageIds.value,
+        [message.id]: true,
+    };
+
+    try {
+        const headers = csrfHeaders();
+        let retryUrl: string;
+        if (props.type === 'agent_chat' && props.agentId) {
+            retryUrl = retryAgentConversationMessage.url({
+                project: props.projectUuid,
+                agent: props.agentId,
+                conversation: conversationId.value,
+                message: message.id,
+            });
+        } else {
+            retryUrl = retryPromptConversationMessage.url({
+                project: props.projectUuid,
+                conversation: conversationId.value,
+                message: message.id,
+            });
+        }
+
+        const response = await fetch(
+            retryUrl,
+            {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    ...headers,
+                },
+                credentials: 'same-origin',
+            }
+        );
+
+        const payload = await response.json().catch(() => null);
+        if (!payload) {
+            throw new Error('Retry returned an invalid response.');
+        }
+
+        const assistantMessage = payload.assistant_message;
+        if (!response.ok) {
+            throw new Error(payload?.message ?? 'Retry failed.');
+        }
+
+        if (!assistantMessage) {
+            throw new Error(payload?.message ?? 'Retry returned no assistant_message.');
+        }
+
+        replaceMessage(assistantMessage);
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+
+        replaceMessage({
+            ...message,
+            meta: {
+                ...(message.meta ?? {}),
+                status: 'failed',
+                error_message: errorMessage || 'Retry failed. Please try again.',
+                retry: {
+                    count: retryCount(message) + 1,
+                    last_attempt_at: new Date().toISOString(),
+                },
+            },
+        });
+    } finally {
+        if (typeof message.id === 'number') {
+            const rest = { ...retryingMessageIds.value };
+            delete rest[message.id];
+            retryingMessageIds.value = rest;
+        }
+    }
+};
+
 const sendMessage = async () => {
     if (!hasInput.value || isSending.value) return;
     await ensureConversation();
     if (!conversationId.value) return;
+    const headers = csrfHeaders();
 
     const content = input.value.trim();
     input.value = '';
@@ -298,16 +429,14 @@ const sendMessage = async () => {
 
     isSending.value = true;
 
-    const csrfToken =
-        document
-            .querySelector('meta[name="csrf-token"]')
-            ?.getAttribute('content') ||
-        decodeURIComponent(getCookie('XSRF-TOKEN'));
-
     try {
         let url: string;
         if (props.type === 'agent_chat' && props.agentId) {
-            url = `/projects/${props.projectUuid}/agents/${props.agentId}/conversations/${conversationId.value}/messages`;
+            url = storeAgentConversationMessage.url({
+                project: props.projectUuid,
+                agent: props.agentId,
+                conversation: conversationId.value,
+            });
         } else {
             url = `/projects/${props.projectUuid}/prompt-conversations/${conversationId.value}/messages`;
         }
@@ -317,7 +446,7 @@ const sendMessage = async () => {
             headers: {
                 'Content-Type': 'application/json',
                 Accept: 'application/json',
-                ...(csrfToken ? { 'X-XSRF-TOKEN': csrfToken } : {}),
+                ...headers,
             },
             credentials: 'same-origin',
             body: JSON.stringify({
@@ -326,6 +455,10 @@ const sendMessage = async () => {
         });
 
         const payload = await response.json().catch(() => null);
+        if (!response.ok) {
+            throw new Error(payload?.message ?? 'Failed to send message.');
+        }
+
         const userMessage = payload?.user_message;
         const assistantMessage = payload?.assistant_message;
 
@@ -370,6 +503,18 @@ const sendMessage = async () => {
                 });
             }
         }
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Message failed to send';
+
+        messages.value = messages.value.filter((message) => message.id !== tempId);
+        input.value = content;
+        nextTick(autoResizeInput);
+        toast.add({
+            severity: 'error',
+            summary: 'Message failed to send',
+            detail: errorMessage,
+            life: 3500,
+        });
     } finally {
         isSending.value = false;
     }
@@ -378,6 +523,7 @@ const sendMessage = async () => {
 const resetConversation = () => {
     conversationId.value = null;
     messages.value = [];
+    retryingMessageIds.value = {};
     input.value = '';
     suggestedPromptContent.value = '';
     originalContentForDiff.value = props.originalPromptContent;
@@ -562,10 +708,33 @@ watch(
                                     :class="
                                         message.role === 'user'
                                             ? 'rounded-tr-sm bg-slate-200 text-slate-900 dark:bg-slate-700 dark:text-slate-100'
-                                            : 'rounded-tl-sm bg-slate-50'
+                                            : 'rounded-tl-sm bg-slate-50 dark:bg-slate-800 dark:text-slate-100'
                                     "
                                 >
                                     <div class="whitespace-pre-wrap">{{ message.content }}</div>
+                                    <div
+                                        v-if="isFailedAssistantMessage(message)"
+                                        class="mt-3 flex items-center justify-between gap-2 border-t border-amber-200/80 pt-2 text-xs dark:border-amber-900/80"
+                                    >
+                                        <div class="flex flex-col gap-1">
+                                            <span class="text-amber-700 dark:text-amber-300">{{ retryStatusLabel(message) }}</span>
+                                            <span
+                                                v-if="typeof message.meta?.error_message === 'string' && message.meta.error_message"
+                                                class="text-amber-700/90 dark:text-amber-200/90"
+                                            >
+                                                {{ message.meta.error_message }}
+                                            </span>
+                                        </div>
+                                        <Button
+                                            size="small"
+                                            variant="text"
+                                            :disabled="isRetrying(message.id)"
+                                            :aria-label="`Try again for message ${String(message.id)}`"
+                                            @click="retryMessage(message)"
+                                        >
+                                            Try again
+                                        </Button>
+                                    </div>
                                 </div>
                                 <div
                                     v-if="message.role === 'user'"

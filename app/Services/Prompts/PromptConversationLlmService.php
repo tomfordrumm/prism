@@ -3,7 +3,6 @@
 namespace App\Services\Prompts;
 
 use App\Models\PromptConversation;
-use App\Models\PromptVersion;
 use App\Models\ProviderCredential;
 use App\Models\RunStep;
 use App\Models\Tenant;
@@ -19,10 +18,35 @@ class PromptConversationLlmService
         private LlmService $llmService,
         private PromptFileRenderer $promptFileRenderer,
         private PromptImprovementParser $promptImprovementParser
-    ) {
-    }
+    ) {}
 
     public function generateReply(PromptConversation $conversation): array
+    {
+        $snapshot = $this->buildRequestSnapshot($conversation);
+
+        try {
+            $response = $this->generateReplyFromSnapshot($snapshot);
+        } catch (\Throwable $e) {
+            Log::error('PromptConversationLlmService failed', [
+                'error' => $e->getMessage(),
+                'conversation_id' => $conversation->id,
+            ]);
+
+            throw new RuntimeException($e->getMessage() ?: 'Failed to fetch suggestion', 0, $e);
+        }
+
+        return $response;
+    }
+
+    /**
+     * @return array{
+     *     provider_credential_id: int,
+     *     model_name: string,
+     *     model_params: array<string, mixed>,
+     *     messages: array<int, array{role: string, content: string}>
+     * }
+     */
+    public function buildRequestSnapshot(PromptConversation $conversation): array
     {
         $defaults = $this->resolveTenantDefaults();
         $credential = $this->resolveCredential($defaults['provider_credential_id'] ?? null);
@@ -36,20 +60,55 @@ class PromptConversationLlmService
         }
 
         $modelName = $defaults['model_name'] ?: config('llm.judge_model', 'gpt-5.1-mini');
-        $params = $this->judgeParams();
 
-        $messages = $this->buildMessages($conversation);
+        return [
+            'provider_credential_id' => $credential->id,
+            'model_name' => $modelName,
+            'model_params' => $this->judgeParams(),
+            'messages' => $this->buildMessages($conversation),
+        ];
+    }
 
-        try {
-            $response = $this->llmService->call($credential, $modelName, $messages, $params);
-        } catch (\Throwable $e) {
-            Log::error('PromptConversationLlmService failed', [
-                'error' => $e->getMessage(),
-                'conversation_id' => $conversation->id,
-            ]);
+    /**
+     * @param  array{
+     *     provider_credential_id: int,
+     *     model_name: string,
+     *     model_params: array<string, mixed>,
+     *     messages: array<int, array{role: string, content: string}>
+     * }  $snapshot
+     */
+    public function generateReplyFromSnapshot(array $snapshot): array
+    {
+        $credentialId = data_get($snapshot, 'provider_credential_id');
+        $modelName = data_get($snapshot, 'model_name');
+        $params = data_get($snapshot, 'model_params', []);
+        $messages = data_get($snapshot, 'messages', []);
 
-            throw new RuntimeException($e->getMessage() ?: 'Failed to fetch suggestion');
+        if (! is_int($credentialId) || $credentialId <= 0) {
+            throw new RuntimeException('Retry snapshot is missing provider credential.');
         }
+
+        if (! is_string($modelName) || $modelName === '') {
+            throw new RuntimeException('Retry snapshot is missing model name.');
+        }
+
+        if (! is_array($params)) {
+            throw new RuntimeException('Retry snapshot model params are invalid.');
+        }
+
+        if (! is_array($messages)) {
+            throw new RuntimeException('Retry snapshot messages are invalid.');
+        }
+
+        $credential = ProviderCredential::query()
+            ->where('tenant_id', currentTenantId())
+            ->find($credentialId);
+
+        if (! $credential) {
+            throw new RuntimeException('Retry provider credential is unavailable.');
+        }
+
+        $response = $this->llmService->call($credential, $modelName, $messages, $params);
 
         return $this->parseResponse($response);
     }

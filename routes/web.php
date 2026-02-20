@@ -45,6 +45,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
             ->name('projects.prompt-conversations.show');
         Route::post('/prompt-conversations/{conversation}/messages', [PromptConversationController::class, 'storeMessage'])
             ->name('projects.prompt-conversations.messages.store');
+        Route::post('/prompt-conversations/{conversation}/messages/{message}/retry', [PromptConversationController::class, 'retryMessage'])
+            ->name('projects.prompt-conversations.messages.retry');
         Route::get('/prompts', [PromptTemplateController::class, 'index'])->name('projects.prompts.index');
         Route::post('/prompts', [PromptTemplateController::class, 'store'])->name('projects.prompts.store');
         Route::put('/prompts/{promptTemplate}', [PromptTemplateController::class, 'update'])->name('projects.prompts.update');
@@ -68,6 +70,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/agents/{agent}/conversations/{conversation}', [AgentConversationController::class, 'show'])->name('projects.agents.conversations.show');
         Route::delete('/agents/{agent}/conversations/{conversation}', [AgentConversationController::class, 'destroy'])->name('projects.agents.conversations.destroy');
         Route::post('/agents/{agent}/conversations/{conversation}/messages', [AgentConversationController::class, 'storeMessage'])->name('projects.agents.conversations.messages.store');
+        Route::post('/agents/{agent}/conversations/{conversation}/messages/{message}/retry', [AgentConversationController::class, 'retryMessage'])->name('projects.agents.conversations.messages.retry');
 
         Route::get('/chains', [ChainController::class, 'index'])->name('projects.chains.index');
         Route::get('/chains/create', [ChainController::class, 'create'])->name('projects.chains.create');

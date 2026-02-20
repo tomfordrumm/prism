@@ -35,6 +35,7 @@ class PromptConversation extends Model
         return $this->belongsTo(PromptVersion::class, 'target_prompt_version_id');
     }
 
+    /** @return HasMany<PromptMessage, $this> */
     public function messages(): HasMany
     {
         return $this->hasMany(PromptMessage::class, 'conversation_id');
