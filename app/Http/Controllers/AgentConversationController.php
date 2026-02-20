@@ -108,8 +108,8 @@ class AgentConversationController extends Controller
 
             $agent->recordUsage(
                 messages: 2,
-                tokensIn: $reply['usage']['prompt_tokens'] ?? 0,
-                tokensOut: $reply['usage']['completion_tokens'] ?? 0
+                tokensIn: $reply['usage']['prompt_tokens'],
+                tokensOut: $reply['usage']['completion_tokens']
             );
 
             $approachingLimit = $chatService->isApproachingContextLimit($agent, $conversation);
@@ -217,8 +217,8 @@ class AgentConversationController extends Controller
 
                 $agent->recordUsage(
                     messages: 1,
-                    tokensIn: $reply['usage']['prompt_tokens'] ?? 0,
-                    tokensOut: $reply['usage']['completion_tokens'] ?? 0
+                    tokensIn: $reply['usage']['prompt_tokens'],
+                    tokensOut: $reply['usage']['completion_tokens']
                 );
             } catch (Throwable $exception) {
                 $latestMeta['status'] = 'failed';

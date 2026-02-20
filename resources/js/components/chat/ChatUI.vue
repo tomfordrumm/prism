@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import Icon from '@/components/Icon.vue';
-import agentConversationMessageRoutes from '@/routes/projects/agents/conversations/messages';
+import {
+    retry as retryAgentConversationMessage,
+    store as storeAgentConversationMessage,
+} from '@/routes/projects/agents/conversations/messages';
 import Button from 'primevue/button';
 import { usePromptDiff } from '@/composables/usePromptDiff';
 
@@ -136,15 +139,23 @@ const getCookie = (name: string) =>
         .find((row) => row.startsWith(`${name}=`))
         ?.split('=')[1] ?? '';
 
-const csrfToken = (): string =>
-    document
+const csrfHeaders = (): Record<string, string> => {
+    const csrfToken = document
         .querySelector('meta[name="csrf-token"]')
-        ?.getAttribute('content') ||
-    decodeURIComponent(getCookie('XSRF-TOKEN'));
+        ?.getAttribute('content');
+    const xsrfCookie = getCookie('XSRF-TOKEN');
+    const xsrfToken = xsrfCookie ? decodeURIComponent(xsrfCookie) : '';
+
+    return {
+        ...(csrfToken ? { 'X-CSRF-TOKEN': csrfToken } : {}),
+        ...(xsrfToken ? { 'X-XSRF-TOKEN': xsrfToken } : {}),
+    };
+};
 
 const ensureConversation = async (forceNew = false) => {
     if (conversationId.value || isBootstrapping.value) return;
     isBootstrapping.value = true;
+    const headers = csrfHeaders();
 
     let url: string;
     let body: Record<string, unknown>;
@@ -170,7 +181,7 @@ const ensureConversation = async (forceNew = false) => {
         headers: {
             'Content-Type': 'application/json',
             Accept: 'application/json',
-            ...(csrfToken() ? { 'X-XSRF-TOKEN': csrfToken() } : {}),
+            ...headers,
         },
         credentials: 'same-origin',
         body: JSON.stringify(body),
@@ -191,6 +202,7 @@ const ensureConversation = async (forceNew = false) => {
 const loadConversation = async (id: number) => {
     if (isBootstrapping.value) return;
     isBootstrapping.value = true;
+    const headers = csrfHeaders();
 
     let url: string;
     if (props.type === 'agent_chat' && props.agentId) {
@@ -203,7 +215,7 @@ const loadConversation = async (id: number) => {
         method: 'GET',
         headers: {
             Accept: 'application/json',
-            ...(csrfToken() ? { 'X-XSRF-TOKEN': csrfToken() } : {}),
+            ...headers,
         },
         credentials: 'same-origin',
     });
@@ -249,6 +261,7 @@ const createNewConversation = () => {
 const deleteConversation = async (id: number) => {
     if (props.type !== 'agent_chat' || !props.agentId) return;
     if (!confirm('Are you sure you want to delete this conversation?')) return;
+    const headers = csrfHeaders();
 
     const response = await fetch(
         `/projects/${props.projectUuid}/agents/${props.agentId}/conversations/${id}`,
@@ -256,7 +269,7 @@ const deleteConversation = async (id: number) => {
             method: 'DELETE',
             headers: {
                 Accept: 'application/json',
-                ...(csrfToken() ? { 'X-XSRF-TOKEN': csrfToken() } : {}),
+                ...headers,
             },
             credentials: 'same-origin',
         },
@@ -328,8 +341,9 @@ const retryMessage = async (message: ChatMessage) => {
     };
 
     try {
+        const headers = csrfHeaders();
         const response = await fetch(
-            agentConversationMessageRoutes.retry.url({
+            retryAgentConversationMessage.url({
                 project: props.projectUuid,
                 agent: props.agentId,
                 conversation: conversationId.value,
@@ -339,22 +353,27 @@ const retryMessage = async (message: ChatMessage) => {
                 method: 'POST',
                 headers: {
                     Accept: 'application/json',
-                    ...(csrfToken() ? { 'X-XSRF-TOKEN': csrfToken() } : {}),
+                    ...headers,
                 },
                 credentials: 'same-origin',
             }
         );
 
         const payload = await response.json().catch(() => null);
-        const assistantMessage = payload?.assistant_message;
-
-        if (assistantMessage) {
-            replaceMessage(assistantMessage);
+        if (!payload) {
+            throw new Error('Retry returned an invalid response.');
         }
 
-        if (!response.ok && !assistantMessage) {
+        const assistantMessage = payload.assistant_message;
+        if (!response.ok) {
             throw new Error(payload?.message ?? 'Retry failed.');
         }
+
+        if (!assistantMessage) {
+            throw new Error(payload?.message ?? 'Retry returned no assistant_message.');
+        }
+
+        replaceMessage(assistantMessage);
     } catch {
         replaceMessage({
             ...message,
@@ -381,6 +400,7 @@ const sendMessage = async () => {
     if (!hasInput.value || isSending.value) return;
     await ensureConversation();
     if (!conversationId.value) return;
+    const headers = csrfHeaders();
 
     const content = input.value.trim();
     input.value = '';
@@ -397,7 +417,7 @@ const sendMessage = async () => {
     try {
         let url: string;
         if (props.type === 'agent_chat' && props.agentId) {
-            url = agentConversationMessageRoutes.store.url({
+            url = storeAgentConversationMessage.url({
                 project: props.projectUuid,
                 agent: props.agentId,
                 conversation: conversationId.value,
@@ -411,7 +431,7 @@ const sendMessage = async () => {
             headers: {
                 'Content-Type': 'application/json',
                 Accept: 'application/json',
-                ...(csrfToken() ? { 'X-XSRF-TOKEN': csrfToken() } : {}),
+                ...headers,
             },
             credentials: 'same-origin',
             body: JSON.stringify({
