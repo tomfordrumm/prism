@@ -189,15 +189,15 @@ class AgentConversationController extends Controller
 
         try {
             $message->refresh();
-            $refreshedMeta = is_array($message->meta) ? $message->meta : [];
-            if ($message->role !== 'assistant' || ($refreshedMeta['status'] ?? null) !== 'failed') {
+            $meta = is_array($message->meta) ? $message->meta : [];
+            if ($message->role !== 'assistant' || ($meta['status'] ?? null) !== 'failed') {
                 return response()->json([
                     'message' => 'A retry is already in progress for this message.',
                     'assistant_message' => $this->serializeMessage($message),
                 ], 409);
             }
 
-            $latestMeta = is_array($message->meta) ? $message->meta : [];
+            $latestMeta = $meta;
             $snapshot = $latestMeta['request_snapshot'] ?? null;
             $nextRetryCount = (int) data_get($latestMeta, 'retry.count', 0) + 1;
             $attemptedAt = now()->toISOString();

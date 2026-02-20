@@ -32,7 +32,7 @@ class PromptConversationLlmService
                 'conversation_id' => $conversation->id,
             ]);
 
-            throw new RuntimeException($e->getMessage() ?: 'Failed to fetch suggestion');
+            throw new RuntimeException($e->getMessage() ?: 'Failed to fetch suggestion', 0, $e);
         }
 
         return $response;

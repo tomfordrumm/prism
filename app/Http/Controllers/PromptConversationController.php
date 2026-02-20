@@ -115,7 +115,7 @@ class PromptConversationController extends Controller
                     'count' => 0,
                     'last_attempt_at' => now()->toISOString(),
                 ],
-            ]);
+            ], fn ($value) => $value !== null);
 
             $assistantMessage = $this->conversationService->appendMessage(
                 $conversation,

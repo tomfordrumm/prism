@@ -5,7 +5,9 @@ import {
     retry as retryAgentConversationMessage,
     store as storeAgentConversationMessage,
 } from '@/routes/projects/agents/conversations/messages';
+import { retry as retryPromptConversationMessage } from '@/routes/projects/prompt-conversations/messages';
 import Button from 'primevue/button';
+import { useToast } from 'primevue/usetoast';
 import { usePromptDiff } from '@/composables/usePromptDiff';
 
 type ChatRole = 'user' | 'assistant' | 'system';
@@ -97,6 +99,7 @@ const emit = defineEmits<{
     (event: 'conversation-deleted', conversationId: number): void;
     (event: 'message-sent', messages: ChatMessage[]): void;
 }>();
+const toast = useToast();
 
 const conversationId = ref<number | null>(null);
 const messages = ref<ChatMessage[]>([]);
@@ -350,7 +353,11 @@ const retryMessage = async (message: ChatMessage) => {
                 message: message.id,
             });
         } else {
-            retryUrl = `/projects/${props.projectUuid}/prompt-conversations/${conversationId.value}/messages/${message.id}/retry`;
+            retryUrl = retryPromptConversationMessage.url({
+                project: props.projectUuid,
+                conversation: conversationId.value,
+                message: message.id,
+            });
         }
 
         const response = await fetch(
@@ -496,10 +503,18 @@ const sendMessage = async () => {
                 });
             }
         }
-    } catch {
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Message failed to send';
+
         messages.value = messages.value.filter((message) => message.id !== tempId);
         input.value = content;
         nextTick(autoResizeInput);
+        toast.add({
+            severity: 'error',
+            summary: 'Message failed to send',
+            detail: errorMessage,
+            life: 3500,
+        });
     } finally {
         isSending.value = false;
     }
@@ -508,6 +523,7 @@ const sendMessage = async () => {
 const resetConversation = () => {
     conversationId.value = null;
     messages.value = [];
+    retryingMessageIds.value = {};
     input.value = '';
     suggestedPromptContent.value = '';
     originalContentForDiff.value = props.originalPromptContent;

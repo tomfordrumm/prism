@@ -19,7 +19,7 @@ class PromptConversationTest extends TestCase
         $user = User::factory()->create();
         $this->actingAs($user);
 
-        $project = Project::create([
+        $project = Project::factory()->create([
             'tenant_id' => currentTenantId(),
             'name' => 'Chat Project',
         ]);
@@ -44,7 +44,7 @@ class PromptConversationTest extends TestCase
         $user = User::factory()->create();
         $this->actingAs($user);
 
-        $project = Project::create([
+        $project = Project::factory()->create([
             'tenant_id' => currentTenantId(),
             'name' => 'Chat Project',
         ]);
@@ -103,7 +103,7 @@ class PromptConversationTest extends TestCase
         $user = User::factory()->create();
         $this->actingAs($user);
 
-        $project = Project::create([
+        $project = Project::factory()->create([
             'tenant_id' => currentTenantId(),
             'name' => 'Chat Project',
         ]);
@@ -142,6 +142,16 @@ class PromptConversationTest extends TestCase
         $response->assertJsonPath('assistant_message.meta.status', 'failed');
         $response->assertJsonPath('assistant_message.meta.retry.count', 0);
         $response->assertJsonMissingPath('assistant_message.meta.request_snapshot');
+
+        $assistant = PromptMessage::query()
+            ->where('conversation_id', $conversationId)
+            ->where('role', 'assistant')
+            ->latest('id')
+            ->first();
+
+        $this->assertNotNull($assistant);
+        $meta = is_array($assistant->meta) ? $assistant->meta : [];
+        $this->assertSame($snapshot, $meta['request_snapshot'] ?? null);
     }
 
     public function test_prompt_message_with_array_assistant_content_is_serialized(): void
@@ -149,7 +159,7 @@ class PromptConversationTest extends TestCase
         $user = User::factory()->create();
         $this->actingAs($user);
 
-        $project = Project::create([
+        $project = Project::factory()->create([
             'tenant_id' => currentTenantId(),
             'name' => 'Chat Project',
         ]);
@@ -196,7 +206,7 @@ class PromptConversationTest extends TestCase
         $user = User::factory()->create();
         $this->actingAs($user);
 
-        $project = Project::create([
+        $project = Project::factory()->create([
             'tenant_id' => currentTenantId(),
             'name' => 'Chat Project',
         ]);
@@ -254,12 +264,168 @@ class PromptConversationTest extends TestCase
         $response->assertJsonPath('assistant_message.meta.retry.count', 1);
     }
 
+    public function test_prompt_retry_on_non_assistant_message_returns_422(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user);
+
+        $project = Project::factory()->create([
+            'tenant_id' => currentTenantId(),
+            'name' => 'Chat Project',
+        ]);
+
+        $conversation = PromptConversation::create([
+            'tenant_id' => currentTenantId(),
+            'project_id' => $project->id,
+            'type' => 'idea',
+            'status' => 'active',
+        ]);
+
+        $message = PromptMessage::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'user',
+            'content' => 'Hello',
+            'meta' => ['status' => 'failed'],
+        ]);
+
+        $response = $this->postJson(
+            "/projects/{$project->uuid}/prompt-conversations/{$conversation->id}/messages/{$message->id}/retry"
+        );
+
+        $response->assertStatus(422);
+    }
+
+    public function test_prompt_retry_on_non_failed_message_returns_422(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user);
+
+        $project = Project::factory()->create([
+            'tenant_id' => currentTenantId(),
+            'name' => 'Chat Project',
+        ]);
+
+        $conversation = PromptConversation::create([
+            'tenant_id' => currentTenantId(),
+            'project_id' => $project->id,
+            'type' => 'idea',
+            'status' => 'active',
+        ]);
+
+        $message = PromptMessage::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Done',
+            'meta' => ['status' => 'success'],
+        ]);
+
+        $response = $this->postJson(
+            "/projects/{$project->uuid}/prompt-conversations/{$conversation->id}/messages/{$message->id}/retry"
+        );
+
+        $response->assertStatus(422);
+    }
+
+    public function test_prompt_retry_with_missing_snapshot_returns_422(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user);
+
+        $project = Project::factory()->create([
+            'tenant_id' => currentTenantId(),
+            'name' => 'Chat Project',
+        ]);
+
+        $conversation = PromptConversation::create([
+            'tenant_id' => currentTenantId(),
+            'project_id' => $project->id,
+            'type' => 'idea',
+            'status' => 'active',
+        ]);
+
+        $message = PromptMessage::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Retry me',
+            'meta' => [
+                'status' => 'failed',
+                'retry' => [
+                    'count' => 0,
+                    'last_attempt_at' => now()->subMinute()->toISOString(),
+                ],
+                'request_snapshot' => null,
+            ],
+        ]);
+
+        $response = $this->postJson(
+            "/projects/{$project->uuid}/prompt-conversations/{$conversation->id}/messages/{$message->id}/retry"
+        );
+
+        $response->assertStatus(422);
+        $response->assertJsonPath('message', 'Retry snapshot is unavailable.');
+    }
+
+    public function test_prompt_retry_failure_keeps_failed_status_and_increments_retry_count(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user);
+
+        $project = Project::factory()->create([
+            'tenant_id' => currentTenantId(),
+            'name' => 'Chat Project',
+        ]);
+
+        $conversation = PromptConversation::create([
+            'tenant_id' => currentTenantId(),
+            'project_id' => $project->id,
+            'type' => 'idea',
+            'status' => 'active',
+        ]);
+
+        $message = PromptMessage::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'Retry me',
+            'meta' => [
+                'status' => 'failed',
+                'retry' => [
+                    'count' => 0,
+                    'last_attempt_at' => now()->subMinute()->toISOString(),
+                ],
+                'request_snapshot' => [
+                    'provider_credential_id' => 1,
+                    'model_name' => 'gpt-5.1-mini',
+                    'model_params' => [],
+                    'messages' => [
+                        ['role' => 'system', 'content' => 'System'],
+                        ['role' => 'user', 'content' => 'Hello there'],
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->mock(PromptConversationLlmService::class, function ($mock) {
+            $mock->shouldReceive('generateReplyFromSnapshot')
+                ->once()
+                ->andThrow(new \RuntimeException('Still overloaded'));
+        });
+
+        $response = $this->postJson(
+            "/projects/{$project->uuid}/prompt-conversations/{$conversation->id}/messages/{$message->id}/retry"
+        );
+
+        $response->assertOk();
+        $response->assertJsonPath('assistant_message.meta.status', 'failed');
+        $response->assertJsonPath('assistant_message.meta.retry.count', 1);
+        $response->assertJsonPath('assistant_message.meta.error_message', 'Still overloaded');
+    }
+
     public function test_user_cannot_access_other_tenant_conversation(): void
     {
         $owner = User::factory()->create();
         $this->actingAs($owner);
 
-        $project = Project::create([
+        $project = Project::factory()->create([
             'tenant_id' => currentTenantId(),
             'name' => 'Primary Project',
         ]);
