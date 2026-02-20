@@ -11,6 +11,7 @@ use App\Services\Agents\AgentChatService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class AgentConversationController extends Controller
@@ -120,17 +121,26 @@ class AgentConversationController extends Controller
                 'approaching_context_limit' => $approachingLimit,
             ]);
         } catch (Throwable $exception) {
+            $sanitizedErrorMessage = $this->sanitizeErrorMessage($exception);
+            Log::error('AgentConversationController::storeMessage failed', [
+                'sanitized_message' => $sanitizedErrorMessage,
+                'exception_class' => get_class($exception),
+                'conversation_id' => $conversation->id,
+                'agent_id' => $agent->id,
+                'user_id' => auth()->id(),
+            ]);
+
             $assistantMessage = $conversation->messages()->create([
                 'role' => 'assistant',
                 'content' => 'I could not complete that request. Try again.',
                 'meta' => [
                     'status' => 'failed',
-                    'error_message' => $this->sanitizeErrorMessage($exception),
+                    'error_message' => $sanitizedErrorMessage,
                     'retry' => [
                         'count' => 0,
                         'last_attempt_at' => now()->toISOString(),
                     ],
-                    'request_snapshot' => is_array($snapshot) && $snapshot !== [] ? $snapshot : null,
+                    'request_snapshot' => is_array($snapshot) ? $snapshot : null,
                 ],
             ]);
 
@@ -178,6 +188,15 @@ class AgentConversationController extends Controller
         }
 
         try {
+            $message->refresh();
+            $refreshedMeta = is_array($message->meta) ? $message->meta : [];
+            if ($message->role !== 'assistant' || ($refreshedMeta['status'] ?? null) !== 'failed') {
+                return response()->json([
+                    'message' => 'A retry is already in progress for this message.',
+                    'assistant_message' => $this->serializeMessage($message),
+                ], 409);
+            }
+
             $latestMeta = is_array($message->meta) ? $message->meta : [];
             $snapshot = $latestMeta['request_snapshot'] ?? null;
             $nextRetryCount = (int) data_get($latestMeta, 'retry.count', 0) + 1;
@@ -216,13 +235,23 @@ class AgentConversationController extends Controller
                 $message->save();
 
                 $agent->recordUsage(
-                    messages: 1,
+                    messages: 0,
                     tokensIn: $reply['usage']['prompt_tokens'],
                     tokensOut: $reply['usage']['completion_tokens']
                 );
             } catch (Throwable $exception) {
+                $sanitizedErrorMessage = $this->sanitizeErrorMessage($exception);
+                Log::error('AgentConversationController::retryMessage failed', [
+                    'sanitized_message' => $sanitizedErrorMessage,
+                    'exception_class' => get_class($exception),
+                    'conversation_id' => $conversation->id,
+                    'agent_id' => $agent->id,
+                    'message_id' => $message->id,
+                    'user_id' => auth()->id(),
+                ]);
+
                 $latestMeta['status'] = 'failed';
-                $latestMeta['error_message'] = $this->sanitizeErrorMessage($exception);
+                $latestMeta['error_message'] = $sanitizedErrorMessage;
                 $latestMeta['retry'] = [
                     'count' => $nextRetryCount,
                     'last_attempt_at' => $attemptedAt,

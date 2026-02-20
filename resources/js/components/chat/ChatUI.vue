@@ -139,6 +139,7 @@ const getCookie = (name: string) =>
         .find((row) => row.startsWith(`${name}=`))
         ?.split('=')[1] ?? '';
 
+// Meta token goes to X-CSRF-TOKEN, decoded cookie token goes to X-XSRF-TOKEN.
 const csrfHeaders = (): Record<string, string> => {
     const csrfToken = document
         .querySelector('meta[name="csrf-token"]')
@@ -374,13 +375,15 @@ const retryMessage = async (message: ChatMessage) => {
         }
 
         replaceMessage(assistantMessage);
-    } catch {
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+
         replaceMessage({
             ...message,
             meta: {
                 ...(message.meta ?? {}),
                 status: 'failed',
-                error_message: 'Retry failed. Please try again.',
+                error_message: errorMessage || 'Retry failed. Please try again.',
                 retry: {
                     count: retryCount(message) + 1,
                     last_attempt_at: new Date().toISOString(),
@@ -692,11 +695,20 @@ watch(
                                         v-if="isFailedAssistantMessage(message)"
                                         class="mt-3 flex items-center justify-between gap-2 border-t border-amber-200/80 pt-2 text-xs dark:border-amber-900/80"
                                     >
-                                        <span class="text-amber-700 dark:text-amber-300">{{ retryStatusLabel(message) }}</span>
+                                        <div class="flex flex-col gap-1">
+                                            <span class="text-amber-700 dark:text-amber-300">{{ retryStatusLabel(message) }}</span>
+                                            <span
+                                                v-if="typeof message.meta?.error_message === 'string' && message.meta.error_message"
+                                                class="text-amber-700/90 dark:text-amber-200/90"
+                                            >
+                                                {{ message.meta.error_message }}
+                                            </span>
+                                        </div>
                                         <Button
                                             size="small"
                                             variant="text"
                                             :disabled="isRetrying(message.id)"
+                                            :aria-label="`Try again for message ${String(message.id)}`"
                                             @click="retryMessage(message)"
                                         >
                                             Try again
