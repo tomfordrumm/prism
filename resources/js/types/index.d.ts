@@ -47,6 +47,7 @@ export interface User {
     name: string;
     email: string;
     avatar?: string;
+    chat_enter_behavior: 'send' | 'newline';
     email_verified_at: string | null;
     created_at: string;
     updated_at: string;

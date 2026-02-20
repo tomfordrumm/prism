@@ -77,6 +77,29 @@ const user = page.props.auth.user;
                         <InputError class="mt-2" :message="errors.email" />
                     </div>
 
+                    <div class="grid gap-2">
+                        <Label for="chat_enter_behavior"
+                            >Chat keyboard behavior</Label
+                        >
+                        <select
+                            id="chat_enter_behavior"
+                            name="chat_enter_behavior"
+                            class="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                            :value="user.chat_enter_behavior"
+                        >
+                            <option value="send">
+                                Enter sends, Ctrl/Cmd+Enter newline
+                            </option>
+                            <option value="newline">
+                                Enter newline, Ctrl/Cmd+Enter sends
+                            </option>
+                        </select>
+                        <InputError
+                            class="mt-2"
+                            :message="errors.chat_enter_behavior"
+                        />
+                    </div>
+
                     <div v-if="mustVerifyEmail && !user.email_verified_at">
                         <p class="-mt-4 text-sm text-muted-foreground">
                             Your email address is unverified.

@@ -6,11 +6,14 @@ import {
     store as storeAgentConversationMessage,
 } from '@/routes/projects/agents/conversations/messages';
 import { retry as retryPromptConversationMessage } from '@/routes/projects/prompt-conversations/messages';
+import { type AppPageProps } from '@/types';
 import Button from 'primevue/button';
 import { useToast } from 'primevue/usetoast';
 import { usePromptDiff } from '@/composables/usePromptDiff';
+import { usePage } from '@inertiajs/vue3';
 
 type ChatRole = 'user' | 'assistant' | 'system';
+type ChatEnterBehavior = 'send' | 'newline';
 
 type ChatMessage = {
     id: number | string;
@@ -100,6 +103,7 @@ const emit = defineEmits<{
     (event: 'message-sent', messages: ChatMessage[]): void;
 }>();
 const toast = useToast();
+const page = usePage<AppPageProps>();
 
 const conversationId = ref<number | null>(null);
 const messages = ref<ChatMessage[]>([]);
@@ -121,6 +125,16 @@ const { viewMode, diffLines, diffLineSymbol, hasSuggestion, setViewMode } = useP
 
 const hasConversation = computed(() => messages.value.length > 0 || isSending.value);
 const hasInput = computed(() => input.value.trim().length > 0);
+const chatEnterBehavior = computed<ChatEnterBehavior>(() => {
+    const behavior = page.props.auth?.user?.chat_enter_behavior;
+
+    return behavior === 'newline' ? 'newline' : 'send';
+});
+const keyboardHint = computed(() =>
+    chatEnterBehavior.value === 'send'
+        ? 'Enter sends, Ctrl/Cmd+Enter inserts newline'
+        : 'Enter inserts newline, Ctrl/Cmd+Enter sends'
+);
 
 const ideaInputRef = ref<HTMLTextAreaElement | null>(null);
 const autoResizeInput = () => {
@@ -412,9 +426,15 @@ const retryMessage = async (message: ChatMessage) => {
 };
 
 const sendMessage = async () => {
-    if (!hasInput.value || isSending.value) return;
+    if (!hasInput.value || isSending.value) {
+        return;
+    }
+
     await ensureConversation();
-    if (!conversationId.value) return;
+    if (!conversationId.value) {
+        return;
+    }
+
     const headers = csrfHeaders();
 
     const content = input.value.trim();
@@ -518,6 +538,62 @@ const sendMessage = async () => {
     } finally {
         isSending.value = false;
     }
+};
+
+const handleInputKeydown = (event: KeyboardEvent) => {
+    const isEnterKey =
+        event.key === 'Enter' ||
+        event.key === 'NumpadEnter' ||
+        event.code === 'Enter' ||
+        event.code === 'NumpadEnter';
+
+    if (!isEnterKey || event.isComposing) {
+        return;
+    }
+
+    const modifierPressed = event.ctrlKey || event.metaKey;
+
+    if (chatEnterBehavior.value === 'send') {
+        if (event.shiftKey) {
+            return;
+        }
+
+        if (modifierPressed) {
+            const target = event.currentTarget;
+            if (target instanceof HTMLTextAreaElement) {
+                event.preventDefault();
+
+                const selectionStart = target.selectionStart ?? input.value.length;
+                const selectionEnd = target.selectionEnd ?? selectionStart;
+                const nextValue =
+                    input.value.slice(0, selectionStart) +
+                    '\n' +
+                    input.value.slice(selectionEnd);
+
+                input.value = nextValue;
+                nextTick(() => {
+                    autoResizeInput();
+                    const nextCaret = selectionStart + 1;
+                    target.setSelectionRange(nextCaret, nextCaret);
+                });
+
+                return;
+            }
+            return;
+        }
+
+        event.preventDefault();
+        void sendMessage();
+
+        return;
+    }
+
+    if (!modifierPressed) {
+        return;
+    }
+
+    event.preventDefault();
+    void sendMessage();
 };
 
 const resetConversation = () => {
@@ -781,6 +857,7 @@ watch(
                                     class="min-h-[28px] w-full resize-none bg-transparent text-sm text-foreground outline-none placeholder:text-slate-400 focus:outline-none"
                                     :placeholder="placeholder"
                                     @input="autoResizeInput"
+                                    @keydown="handleInputKeydown"
                                 ></textarea>
                                 <button
                                     type="submit"
@@ -791,6 +868,9 @@ watch(
                                 >
                                     <Icon name="send" class="h-4 w-4" />
                                 </button>
+                            </div>
+                            <div class="mt-2 text-xs text-muted-foreground">
+                                {{ keyboardHint }}
                             </div>
                         </form>
                     </div>
