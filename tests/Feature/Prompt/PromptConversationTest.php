@@ -50,7 +50,19 @@ class PromptConversationTest extends TestCase
         ]);
 
         $this->mock(PromptConversationLlmService::class, function ($mock) {
-            $mock->shouldReceive('generateReply')
+            $mock->shouldReceive('buildRequestSnapshot')
+                ->once()
+                ->andReturn([
+                    'provider_credential_id' => 1,
+                    'model_name' => 'gpt-5.1-mini',
+                    'model_params' => [],
+                    'messages' => [
+                        ['role' => 'system', 'content' => 'System'],
+                        ['role' => 'user', 'content' => 'Hello there'],
+                    ],
+                ]);
+            $mock->shouldReceive('generateReplyFromSnapshot')
+                ->once()
                 ->andReturn([
                     'assistant_content' => 'Thanks! Here is your prompt.',
                     'analysis' => 'Short analysis.',
@@ -84,6 +96,162 @@ class PromptConversationTest extends TestCase
             'role' => 'assistant',
             'content' => 'Thanks! Here is your prompt.',
         ]);
+    }
+
+    public function test_prompt_message_failure_persists_failed_assistant_message(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user);
+
+        $project = Project::create([
+            'tenant_id' => currentTenantId(),
+            'name' => 'Chat Project',
+        ]);
+
+        $snapshot = [
+            'provider_credential_id' => 1,
+            'model_name' => 'gpt-5.1-mini',
+            'model_params' => [],
+            'messages' => [
+                ['role' => 'system', 'content' => 'System'],
+                ['role' => 'user', 'content' => 'Hello there'],
+            ],
+        ];
+
+        $this->mock(PromptConversationLlmService::class, function ($mock) use ($snapshot) {
+            $mock->shouldReceive('buildRequestSnapshot')
+                ->once()
+                ->andReturn($snapshot);
+            $mock->shouldReceive('generateReplyFromSnapshot')
+                ->once()
+                ->andThrow(new \RuntimeException('Gemini high demand'));
+        });
+
+        $conversationResponse = $this->postJson("/projects/{$project->uuid}/prompt-conversations", [
+            'type' => 'idea',
+        ]);
+
+        $conversationId = $conversationResponse->json('conversation.id');
+
+        $response = $this->postJson(
+            "/projects/{$project->uuid}/prompt-conversations/{$conversationId}/messages",
+            ['content' => 'Hello there']
+        );
+
+        $response->assertOk();
+        $response->assertJsonPath('assistant_message.meta.status', 'failed');
+        $response->assertJsonPath('assistant_message.meta.retry.count', 0);
+        $response->assertJsonMissingPath('assistant_message.meta.request_snapshot');
+    }
+
+    public function test_prompt_message_with_array_assistant_content_is_serialized(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user);
+
+        $project = Project::create([
+            'tenant_id' => currentTenantId(),
+            'name' => 'Chat Project',
+        ]);
+
+        $this->mock(PromptConversationLlmService::class, function ($mock) {
+            $mock->shouldReceive('buildRequestSnapshot')
+                ->once()
+                ->andReturn([
+                    'provider_credential_id' => 1,
+                    'model_name' => 'gpt-5.1-mini',
+                    'model_params' => [],
+                    'messages' => [
+                        ['role' => 'system', 'content' => 'System'],
+                        ['role' => 'user', 'content' => 'Hello there'],
+                    ],
+                ]);
+            $mock->shouldReceive('generateReplyFromSnapshot')
+                ->once()
+                ->andReturn([
+                    'assistant_content' => ['text' => 'Array payload'],
+                    'analysis' => null,
+                    'suggested_prompt' => null,
+                    'usage' => [],
+                    'raw' => [],
+                ]);
+        });
+
+        $conversationResponse = $this->postJson("/projects/{$project->uuid}/prompt-conversations", [
+            'type' => 'idea',
+        ]);
+        $conversationId = $conversationResponse->json('conversation.id');
+
+        $response = $this->postJson(
+            "/projects/{$project->uuid}/prompt-conversations/{$conversationId}/messages",
+            ['content' => 'Hello there']
+        );
+
+        $response->assertOk();
+        $response->assertJsonPath('assistant_message.content', '{"text":"Array payload"}');
+    }
+
+    public function test_failed_prompt_message_can_be_retried_successfully(): void
+    {
+        $user = User::factory()->create();
+        $this->actingAs($user);
+
+        $project = Project::create([
+            'tenant_id' => currentTenantId(),
+            'name' => 'Chat Project',
+        ]);
+
+        $conversation = PromptConversation::create([
+            'tenant_id' => currentTenantId(),
+            'project_id' => $project->id,
+            'type' => 'idea',
+            'status' => 'active',
+        ]);
+
+        $failed = PromptMessage::create([
+            'conversation_id' => $conversation->id,
+            'role' => 'assistant',
+            'content' => 'I could not complete that request. Try again.',
+            'meta' => [
+                'status' => 'failed',
+                'error_message' => 'Gemini high demand',
+                'retry' => [
+                    'count' => 0,
+                    'last_attempt_at' => now()->subMinute()->toISOString(),
+                ],
+                'request_snapshot' => [
+                    'provider_credential_id' => 1,
+                    'model_name' => 'gpt-5.1-mini',
+                    'model_params' => [],
+                    'messages' => [
+                        ['role' => 'system', 'content' => 'System'],
+                        ['role' => 'user', 'content' => 'Hello there'],
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->mock(PromptConversationLlmService::class, function ($mock) {
+            $mock->shouldReceive('generateReplyFromSnapshot')
+                ->once()
+                ->andReturn([
+                    'assistant_content' => 'Recovered answer',
+                    'analysis' => null,
+                    'suggested_prompt' => null,
+                    'usage' => [],
+                    'raw' => [],
+                ]);
+        });
+
+        $response = $this->postJson(
+            "/projects/{$project->uuid}/prompt-conversations/{$conversation->id}/messages/{$failed->id}/retry"
+        );
+
+        $response->assertOk();
+        $response->assertJsonPath('assistant_message.id', $failed->id);
+        $response->assertJsonPath('assistant_message.content', 'Recovered answer');
+        $response->assertJsonPath('assistant_message.meta.status', 'success');
+        $response->assertJsonPath('assistant_message.meta.retry.count', 1);
     }
 
     public function test_user_cannot_access_other_tenant_conversation(): void

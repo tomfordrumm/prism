@@ -327,8 +327,6 @@ const replaceMessage = (nextMessage: ChatMessage): void => {
 
 const retryMessage = async (message: ChatMessage) => {
     if (
-        props.type !== 'agent_chat' ||
-        !props.agentId ||
         !conversationId.value ||
         typeof message.id !== 'number' ||
         isRetrying(message.id)
@@ -343,13 +341,20 @@ const retryMessage = async (message: ChatMessage) => {
 
     try {
         const headers = csrfHeaders();
-        const response = await fetch(
-            retryAgentConversationMessage.url({
+        let retryUrl: string;
+        if (props.type === 'agent_chat' && props.agentId) {
+            retryUrl = retryAgentConversationMessage.url({
                 project: props.projectUuid,
                 agent: props.agentId,
                 conversation: conversationId.value,
                 message: message.id,
-            }),
+            });
+        } else {
+            retryUrl = `/projects/${props.projectUuid}/prompt-conversations/${conversationId.value}/messages/${message.id}/retry`;
+        }
+
+        const response = await fetch(
+            retryUrl,
             {
                 method: 'POST',
                 headers: {

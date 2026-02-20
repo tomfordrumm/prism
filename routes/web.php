@@ -45,6 +45,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
             ->name('projects.prompt-conversations.show');
         Route::post('/prompt-conversations/{conversation}/messages', [PromptConversationController::class, 'storeMessage'])
             ->name('projects.prompt-conversations.messages.store');
+        Route::post('/prompt-conversations/{conversation}/messages/{message}/retry', [PromptConversationController::class, 'retryMessage'])
+            ->name('projects.prompt-conversations.messages.retry');
         Route::get('/prompts', [PromptTemplateController::class, 'index'])->name('projects.prompts.index');
         Route::post('/prompts', [PromptTemplateController::class, 'store'])->name('projects.prompts.store');
         Route::put('/prompts/{promptTemplate}', [PromptTemplateController::class, 'update'])->name('projects.prompts.update');
