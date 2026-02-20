@@ -23,7 +23,7 @@ class ProfileController extends Controller
         return Inertia::render('settings/Profile', [
             'mustVerifyEmail' => $user instanceof MustVerifyEmail,
             'status' => $request->session()->get('status'),
-            'chatEnterBehavior' => $user?->chat_enter_behavior ?? 'send',
+            'chatEnterBehavior' => $user->chat_enter_behavior ?? 'send',
         ]);
     }
 

@@ -17,10 +17,9 @@ import { type BreadcrumbItem } from '@/types';
 interface Props {
     mustVerifyEmail: boolean;
     status?: string;
-    chatEnterBehavior: 'send' | 'newline';
 }
 
-const props = defineProps<Props>();
+defineProps<Props>();
 
 const breadcrumbItems: BreadcrumbItem[] = [
     {
@@ -85,11 +84,8 @@ const user = page.props.auth.user;
                         <select
                             id="chat_enter_behavior"
                             name="chat_enter_behavior"
-                            class="mt-1 block w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
-                            :value="
-                                user.chat_enter_behavior ??
-                                props.chatEnterBehavior
-                            "
+                            class="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground shadow-sm focus:outline-none focus:ring-1 focus:ring-primary"
+                            :value="user.chat_enter_behavior"
                         >
                             <option value="send">
                                 Enter sends, Ctrl/Cmd+Enter newline

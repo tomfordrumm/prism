@@ -12,6 +12,36 @@ const jsonResponse = (payload: unknown, ok = true): Response =>
         json: async () => payload,
     }) as Response;
 
+const buildSendFetchMock = () =>
+    vi
+        .fn()
+        .mockResolvedValueOnce(
+            jsonResponse({
+                conversation: {
+                    id: 10,
+                    type: 'agent_chat',
+                    status: 'active',
+                    created_at: '2026-02-20T00:00:00.000Z',
+                    updated_at: '2026-02-20T00:00:00.000Z',
+                },
+                messages: [],
+            })
+        )
+        .mockResolvedValueOnce(
+            jsonResponse({
+                user_message: {
+                    id: 1,
+                    role: 'user',
+                    content: 'Hello',
+                },
+                assistant_message: {
+                    id: 2,
+                    role: 'assistant',
+                    content: 'Hi',
+                },
+            })
+        );
+
 let chatEnterBehavior: ChatEnterBehavior = 'send';
 
 vi.mock('@inertiajs/vue3', async () => {
@@ -122,34 +152,7 @@ describe('ChatUI keyboard behavior', () => {
     });
 
     it('sends on Enter in send mode', async () => {
-        const fetchMock = vi
-            .fn()
-            .mockResolvedValueOnce(
-                jsonResponse({
-                    conversation: {
-                        id: 10,
-                        type: 'agent_chat',
-                        status: 'active',
-                        created_at: '2026-02-20T00:00:00.000Z',
-                        updated_at: '2026-02-20T00:00:00.000Z',
-                    },
-                    messages: [],
-                })
-            )
-            .mockResolvedValueOnce(
-                jsonResponse({
-                    user_message: {
-                        id: 1,
-                        role: 'user',
-                        content: 'Hello',
-                    },
-                    assistant_message: {
-                        id: 2,
-                        role: 'assistant',
-                        content: 'Hi',
-                    },
-                })
-            );
+        const fetchMock = buildSendFetchMock();
         vi.stubGlobal('fetch', fetchMock);
 
         const wrapper = mountChat();
@@ -171,6 +174,7 @@ describe('ChatUI keyboard behavior', () => {
 
         await textarea.setValue('Hello');
         await textarea.trigger('keydown', { key: 'Enter', ctrlKey: true });
+        await textarea.trigger('keydown', { key: 'Enter', metaKey: true });
         await flushPromises();
 
         expect(fetchMock).not.toHaveBeenCalled();
@@ -178,34 +182,7 @@ describe('ChatUI keyboard behavior', () => {
 
     it('sends on Ctrl+Enter in newline mode', async () => {
         chatEnterBehavior = 'newline';
-        const fetchMock = vi
-            .fn()
-            .mockResolvedValueOnce(
-                jsonResponse({
-                    conversation: {
-                        id: 10,
-                        type: 'agent_chat',
-                        status: 'active',
-                        created_at: '2026-02-20T00:00:00.000Z',
-                        updated_at: '2026-02-20T00:00:00.000Z',
-                    },
-                    messages: [],
-                })
-            )
-            .mockResolvedValueOnce(
-                jsonResponse({
-                    user_message: {
-                        id: 1,
-                        role: 'user',
-                        content: 'Hello',
-                    },
-                    assistant_message: {
-                        id: 2,
-                        role: 'assistant',
-                        content: 'Hi',
-                    },
-                })
-            );
+        const fetchMock = buildSendFetchMock();
         vi.stubGlobal('fetch', fetchMock);
 
         const wrapper = mountChat();
@@ -220,34 +197,7 @@ describe('ChatUI keyboard behavior', () => {
 
     it('sends on Cmd+Enter in newline mode', async () => {
         chatEnterBehavior = 'newline';
-        const fetchMock = vi
-            .fn()
-            .mockResolvedValueOnce(
-                jsonResponse({
-                    conversation: {
-                        id: 10,
-                        type: 'agent_chat',
-                        status: 'active',
-                        created_at: '2026-02-20T00:00:00.000Z',
-                        updated_at: '2026-02-20T00:00:00.000Z',
-                    },
-                    messages: [],
-                })
-            )
-            .mockResolvedValueOnce(
-                jsonResponse({
-                    user_message: {
-                        id: 1,
-                        role: 'user',
-                        content: 'Hello',
-                    },
-                    assistant_message: {
-                        id: 2,
-                        role: 'assistant',
-                        content: 'Hi',
-                    },
-                })
-            );
+        const fetchMock = buildSendFetchMock();
         vi.stubGlobal('fetch', fetchMock);
 
         const wrapper = mountChat();

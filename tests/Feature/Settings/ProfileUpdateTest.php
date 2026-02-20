@@ -64,6 +64,7 @@ class ProfileUpdateTest extends TestCase
     public function test_chat_enter_behavior_can_be_updated()
     {
         $user = User::factory()->create();
+        $this->assertSame('send', $user->fresh()->chat_enter_behavior);
 
         $response = $this
             ->actingAs($user)
@@ -78,6 +79,20 @@ class ProfileUpdateTest extends TestCase
             ->assertRedirect(route('profile.edit'));
 
         $this->assertSame('newline', $user->refresh()->chat_enter_behavior);
+
+        $roundTripResponse = $this
+            ->actingAs($user)
+            ->patch(route('profile.update'), [
+                'name' => $user->name,
+                'email' => $user->email,
+                'chat_enter_behavior' => 'send',
+            ]);
+
+        $roundTripResponse
+            ->assertSessionHasNoErrors()
+            ->assertRedirect(route('profile.edit'));
+
+        $this->assertSame('send', $user->refresh()->chat_enter_behavior);
     }
 
     public function test_chat_enter_behavior_must_be_valid()
