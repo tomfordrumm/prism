@@ -17,9 +17,10 @@ import { type BreadcrumbItem } from '@/types';
 interface Props {
     mustVerifyEmail: boolean;
     status?: string;
+    chatEnterBehavior: 'send' | 'newline';
 }
 
-defineProps<Props>();
+const props = defineProps<Props>();
 
 const breadcrumbItems: BreadcrumbItem[] = [
     {
@@ -75,6 +76,32 @@ const user = page.props.auth.user;
                             placeholder="Email address"
                         />
                         <InputError class="mt-2" :message="errors.email" />
+                    </div>
+
+                    <div class="grid gap-2">
+                        <Label for="chat_enter_behavior"
+                            >Chat keyboard behavior</Label
+                        >
+                        <select
+                            id="chat_enter_behavior"
+                            name="chat_enter_behavior"
+                            class="mt-1 block w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+                            :value="
+                                user.chat_enter_behavior ??
+                                props.chatEnterBehavior
+                            "
+                        >
+                            <option value="send">
+                                Enter sends, Ctrl/Cmd+Enter newline
+                            </option>
+                            <option value="newline">
+                                Enter newline, Ctrl/Cmd+Enter sends
+                            </option>
+                        </select>
+                        <InputError
+                            class="mt-2"
+                            :message="errors.chat_enter_behavior"
+                        />
                     </div>
 
                     <div v-if="mustVerifyEmail && !user.email_verified_at">
