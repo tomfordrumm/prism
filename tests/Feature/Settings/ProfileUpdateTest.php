@@ -113,6 +113,26 @@ class ProfileUpdateTest extends TestCase
             ->assertRedirect(route('profile.edit'));
     }
 
+    public function test_chat_enter_behavior_is_unchanged_when_omitted()
+    {
+        $user = User::factory()->create([
+            'chat_enter_behavior' => 'newline',
+        ]);
+
+        $response = $this
+            ->actingAs($user)
+            ->patch(route('profile.update'), [
+                'name' => $user->name,
+                'email' => $user->email,
+            ]);
+
+        $response
+            ->assertSessionHasNoErrors()
+            ->assertRedirect(route('profile.edit'));
+
+        $this->assertSame('newline', $user->refresh()->chat_enter_behavior);
+    }
+
     public function test_user_can_delete_their_account()
     {
         $user = User::factory()->create();

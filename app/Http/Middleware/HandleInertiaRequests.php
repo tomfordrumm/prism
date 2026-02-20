@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\Project;
+use Carbon\CarbonInterface;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -49,8 +50,9 @@ class HandleInertiaRequests extends Middleware
                     'id' => $user->id,
                     'name' => $user->name,
                     'email' => $user->email,
-                    'avatar' => $user->avatar,
-                    'email_verified_at' => $user->email_verified_at?->toISOString(),
+                    'email_verified_at' => $user->email_verified_at instanceof CarbonInterface
+                        ? $user->email_verified_at->toISOString()
+                        : null,
                     'created_at' => $user->created_at?->toISOString(),
                     'updated_at' => $user->updated_at?->toISOString(),
                     'chat_enter_behavior' => $user->chat_enter_behavior ?? 'send',
