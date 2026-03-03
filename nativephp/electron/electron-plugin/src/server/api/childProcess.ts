@@ -243,14 +243,15 @@ router.post('/stop', (req, res) => {
 router.post('/restart', async (req, res) => {
     const {alias} = req.body;
 
-    const settings = {...getSettings(alias)};
-
-    stopProcess(alias);
-
-    if (settings === undefined) {
+    const settingsRaw = getSettings(alias);
+    if (settingsRaw === undefined) {
         res.sendStatus(410);
         return;
     }
+
+    stopProcess(alias);
+
+    const settings = {...settingsRaw};
 
     // Wait for the process to stop with a timeout of 5s
     const waitForProcessDeletion = async (timeout, retry) => {

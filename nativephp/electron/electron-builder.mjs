@@ -1,5 +1,8 @@
-import { exec } from 'child_process';
+import { exec as execCallback } from 'child_process';
 import { join } from 'path';
+import { promisify } from 'util';
+
+const exec = promisify(execCallback);
 
 const appUrl = process.env.APP_URL;
 const appId = process.env.NATIVEPHP_APP_ID;
@@ -77,8 +80,23 @@ export default {
             process.exit(1);
         }
 
-        console.log(`  • building php binary - exec php.js --${targetOs} --${arch}`);
-        exec(`node php.js --${targetOs} --${arch}`);
+        const command = `node php.js --${targetOs} --${arch}`;
+        console.log(`  • building php binary - exec ${command}`);
+
+        try {
+            const { stdout, stderr } = await exec(command);
+
+            if (stdout) {
+                process.stdout.write(stdout);
+            }
+
+            if (stderr) {
+                process.stderr.write(stderr);
+            }
+        } catch (error) {
+            console.error(`  • php binary build failed: ${command}`);
+            throw error;
+        }
     },
     afterSign: 'build/notarize.js',
     win: {

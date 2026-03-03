@@ -67,6 +67,14 @@ if (platform.phpBinary) {
         // Unzip the files
         unzip.open(binarySrcDir, {lazyEntries: true}, function (err, zipfile) {
             if (err) throw err;
+            zipfile.on("error", function (zipError) {
+                console.error('Error extracting PHP binary', zipError);
+                process.exit(1);
+            });
+            zipfile.on("end", function () {
+                console.log('PHP binary extraction complete');
+                process.exit(0);
+            });
             zipfile.readEntry();
             zipfile.on("entry", function (entry) {
                 zipfile.openReadStream(entry, function (err, readStream) {

@@ -49,23 +49,39 @@ router.post("/show-context-menu", (req, res) => {
 });
 
 router.post("/show", (req, res) => {
-    res.sendStatus(200);
+    if (!state.activeMenuBar) {
+        res.status(404).json({ error: 'No active menubar' });
+        return;
+    }
 
     state.activeMenuBar.showWindow();
+    res.sendStatus(200);
 });
 
 router.post("/hide", (req, res) => {
-    res.sendStatus(200);
+    if (!state.activeMenuBar) {
+        res.status(404).json({ error: 'No active menubar' });
+        return;
+    }
 
     state.activeMenuBar.hideWindow();
+    res.sendStatus(200);
 });
 
 router.post("/resize", (req, res) => {
-    res.sendStatus(200);
+    if (!state.activeMenuBar) {
+        res.status(404).json({ error: 'No active menubar' });
+        return;
+    }
 
     const { width, height } = req.body;
+    if (!Number.isFinite(width) || !Number.isFinite(height)) {
+        res.status(400).json({ error: 'Width and height must be valid numbers' });
+        return;
+    }
 
     state.activeMenuBar.window.setSize(width, height);
+    res.sendStatus(200);
 });
 
 router.post("/create", (req, res) => {

@@ -21,16 +21,16 @@ router.post('/prompt-touch-id', async (req, res) => {
     }
 });
 
-router.get('/can-encrypt', async (req, res) => {
+router.get('/can-encrypt', (req, res) => {
     res.json({
-        result: await safeStorage.isEncryptionAvailable(),
+        result: safeStorage.isEncryptionAvailable(),
     });
 });
 
 router.post('/encrypt', async (req, res) => {
     try {
         res.json({
-            result: await safeStorage.encryptString(req.body.string).toString('base64'),
+            result: safeStorage.encryptString(req.body.string).toString('base64'),
         });
     } catch (e) {
         res.status(400).json({
@@ -42,7 +42,7 @@ router.post('/encrypt', async (req, res) => {
 router.post('/decrypt', async (req, res) => {
     try {
         res.json({
-            result: await safeStorage.decryptString(Buffer.from(req.body.string, 'base64')),
+            result: safeStorage.decryptString(Buffer.from(req.body.string, 'base64')),
         });
     } catch (e) {
         res.status(400).json({
@@ -52,11 +52,31 @@ router.post('/decrypt', async (req, res) => {
 });
 
 router.get('/printers', async (req, res) => {
-    const printers = await BrowserWindow.getAllWindows()[0].webContents.getPrintersAsync();
+    const existingWindow = BrowserWindow.getAllWindows()[0];
+    let window = existingWindow;
+    let createdTemporaryWindow = false;
 
-    res.json({
-        printers,
-    });
+    try {
+        if (!window) {
+            window = new BrowserWindow({ show: false });
+            createdTemporaryWindow = true;
+        }
+
+        const printers = await window.webContents.getPrintersAsync();
+
+        res.json({
+            printers,
+        });
+    } catch (e) {
+        res.status(500).json({
+            printers: [],
+            error: e.message,
+        });
+    } finally {
+        if (createdTemporaryWindow && window && !window.isDestroyed()) {
+            window.destroy();
+        }
+    }
 });
 
 router.post('/print', async (req, res) => {

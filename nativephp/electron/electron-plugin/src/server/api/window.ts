@@ -146,11 +146,25 @@ router.post('/always-on-top', (req, res) => {
 });
 
 router.get('/current', (req, res) => {
+    const focused = BrowserWindow.getFocusedWindow();
+    if (!focused) {
+        res.status(404).json({ error: 'No focused window' });
+        return;
+    }
+
     // Find the current window object
-    const currentWindow = Object.values(state.windows).find(window => window.id === BrowserWindow.getFocusedWindow().id);
+    const currentWindow = Object.values(state.windows).find(window => window.id === focused.id);
+    if (!currentWindow) {
+        res.status(404).json({ error: 'Focused window is not registered in state' });
+        return;
+    }
 
     // Get the developer-assigned id for that window
     const id = Object.keys(state.windows).find(key => state.windows[key] === currentWindow);
+    if (!id || state.windows[id] === undefined) {
+        res.status(404).json({ error: 'Focused window id could not be resolved' });
+        return;
+    }
 
     res.json(getWindowData(id));
 });

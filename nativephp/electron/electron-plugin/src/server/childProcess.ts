@@ -3,6 +3,11 @@ import {spawn, fork} from "child_process";
 const useNodeRuntime = process.env.USE_NODE_RUNTIME === '1';
 const [command, ...args] = process.argv.slice(2);
 
+if (typeof command !== 'string' || command.trim() === '') {
+    console.error('Missing command for child process execution:', process.argv.slice(2));
+    throw new Error('Missing command for child process execution');
+}
+
 // If we need to start the process using the bundled nodejs runtime we need
 // to use utilityProcess.fork. Otherwise, we can use utilityProcess.spawn
 const proc = useNodeRuntime

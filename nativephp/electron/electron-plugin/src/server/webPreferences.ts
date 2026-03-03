@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'url'
 
-let preloadPath = fileURLToPath(new URL('../../electron-plugin/dist/preload/index.mjs', import.meta.url));
+const preloadPath = fileURLToPath(new URL('../../dist/preload/index.mjs', import.meta.url));
 
 const defaultWebPreferences = {
     spellcheck: false,
