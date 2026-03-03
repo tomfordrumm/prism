@@ -15,7 +15,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Install PHP extensions
-RUN docker-php-ext-install pdo pdo_sqlite pdo_mysql bcmath intl pcntl
+RUN docker-php-ext-install pdo pdo_sqlite pdo_mysql bcmath intl pcntl zip
 
 # Install Redis extension
 RUN pecl install redis \

@@ -14,6 +14,11 @@
 /composer.cloud.json
 /composer.cloud.lock
 /composer-cloud
+/nativephp/electron/node_modules
+/nativephp/electron/out
+/nativephp/electron/dist
+/nativephp/electron/electron-plugin/dist
+/nativephp_debug.json
 .DS_Store
 .env
 .env.backup
