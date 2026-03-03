@@ -46,6 +46,42 @@ Open:
 - App: http://localhost:8000
 - Vite HMR: http://localhost:5173
 
+## Desktop (NativePHP, macOS POC)
+
+This repository now includes a NativePHP desktop shell for macOS-focused local development and packaging.
+
+Prerequisites:
+- Local PHP + Composer + Node.js/npm (outside Docker).
+- Network access to install Electron dependencies from npm registry.
+- Existing `.env` configured for PRISM.
+
+Install / bootstrap:
+```bash
+composer desktop:install
+```
+
+Run in desktop dev mode:
+```bash
+composer desktop:dev
+```
+
+Build macOS package (POC):
+```bash
+composer desktop:build:mac
+```
+
+Smoke test checklist:
+- Launch desktop app via `composer desktop:dev`.
+- Open auth screen and complete login/registration.
+- Open a project and run one core chat roundtrip (agent or prompt chat).
+- Confirm no blocking exceptions in Laravel logs during the flow.
+
+Known limitations (current iteration):
+- Auto-updates are not configured for production.
+- macOS signing/notarization is not implemented.
+- Desktop workflow assumes non-Docker local runtime.
+- First-time Electron dependency install requires npm registry availability.
+
 ## Quick Start (Screenshots)
 
 1. Register a new user.

@@ -4,6 +4,22 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Native-safe queue default
+    |--------------------------------------------------------------------------
+    */
+
+    'default' => (function (): string {
+        $queueConnection = env('QUEUE_CONNECTION', 'database');
+
+        if ($queueConnection === 'redis' && ! extension_loaded('redis')) {
+            return 'database';
+        }
+
+        return $queueConnection;
+    })(),
+
+    /*
+    |--------------------------------------------------------------------------
     | Default Queue Connection Name
     |--------------------------------------------------------------------------
     |
@@ -13,7 +29,7 @@ return [
     |
     */
 
-    'default' => env('QUEUE_CONNECTION', 'database'),
+    // See native-safe override above.
 
     /*
     |--------------------------------------------------------------------------

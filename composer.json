@@ -18,6 +18,7 @@
         "laravel/framework": "^12.0",
         "laravel/tinker": "^2.10.1",
         "laravel/wayfinder": "^0.1.9",
+        "nativephp/desktop": "^2.1",
         "openai-php/laravel": "^0.18.0"
     },
     "require-dev": {
@@ -51,6 +52,22 @@
             "@php artisan migrate --force",
             "npm install",
             "npm run build"
+        ],
+        "native:dev": [
+            "Composer\\Config::disableProcessTimeout",
+            "npx concurrently -k -c \"#93c5fd,#c4b5fd\" \"php artisan native:run --no-interaction --no-dependencies\" \"npm run dev\" --names=app,vite"
+        ],
+        "desktop:install": [
+            "@php artisan native:install --force --publish --installer=npm --no-interaction"
+        ],
+        "desktop:electron:install": [
+            "NPM_CONFIG_CACHE=/tmp/.npm npm --prefix nativephp/electron install --prefer-offline --no-audit --fund=false"
+        ],
+        "desktop:dev": [
+            "@composer native:dev"
+        ],
+        "desktop:build:mac": [
+            "@php artisan native:build mac --no-interaction"
         ],
         "dev": [
             "Composer\\Config::disableProcessTimeout",

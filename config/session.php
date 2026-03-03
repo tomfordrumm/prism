@@ -2,6 +2,11 @@
 
 use Illuminate\Support\Str;
 
+$sessionDriver = env('SESSION_DRIVER', 'database');
+if ($sessionDriver === 'redis' && ! extension_loaded('redis')) {
+    $sessionDriver = 'database';
+}
+
 return [
 
     /*
@@ -18,7 +23,7 @@ return [
     |
     */
 
-    'driver' => env('SESSION_DRIVER', 'database'),
+    'driver' => $sessionDriver,
 
     /*
     |--------------------------------------------------------------------------

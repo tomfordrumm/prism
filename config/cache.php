@@ -2,6 +2,11 @@
 
 use Illuminate\Support\Str;
 
+$cacheStore = env('CACHE_STORE', 'database');
+if ($cacheStore === 'redis' && ! extension_loaded('redis')) {
+    $cacheStore = 'database';
+}
+
 return [
 
     /*
@@ -15,7 +20,7 @@ return [
     |
     */
 
-    'default' => env('CACHE_STORE', 'database'),
+    'default' => $cacheStore,
 
     /*
     |--------------------------------------------------------------------------
